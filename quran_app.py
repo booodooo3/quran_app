@@ -119,6 +119,25 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
             return ayah_res["data"], tafsir_res["data"]
         return None, None
     except Exception:
+        # حل مشكلة سورة الفاتحة الآية 1 (البسملة) في حال فشل الاتصال
+        if surah_num == 1 and ayah_num == 1:
+            fallback_ayah = {
+                "number": 1,
+                "text": "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
+                "audio": f"https://cdn.islamic.network/quran/audio/128/{reciter_id}/1.mp3",
+                "numberInSurah": 1,
+                "juz": 1,
+                "manzil": 1,
+                "page": 1,
+                "ruku": 1,
+                "hizbQuarter": 1,
+                "sajda": False
+            }
+            fallback_tafsir = {
+                "text": "سورة الفاتحة سميت هذه السورة بالفاتحة؛ لأنه يفتتح بها القرآن العظيم، وتسمى المثاني؛ لأنها تقرأ في كل ركعة، ولها أسماء أخر. أبتدئ قراءة القرآن باسم الله مستعينا به، (اللهِ) علم على الرب -تبارك وتعالى- المعبود بحق دون سواه، وهو أخص أسماء الله تعالى، ولا يسمى به غيره سبحانه. (الرَّحْمَنِ) ذي الرحمة العامة الذي وسعت رحمته جميع الخلق، (الرَّحِيمِ) بالمؤمنين، وهما اسمان من أسماء الله تعالى، يتضمنان إثبات صفة الرحمة لله تعالى كما يليق بجلاله."
+            }
+            return fallback_ayah, fallback_tafsir
+            
         return None, None
 
 def analyze_marks(text):
@@ -240,7 +259,7 @@ def main():
         st.markdown(f'<div class="tafsir-box">{tafsir_data["text"]}</div>', unsafe_allow_html=True)
         
     else:
-        st.warning("جاري تحميل البيانات... (انتقل الى رقم الاية رقم 2)")
+        st.warning("جاري تحميل البيانات...")
 
     st.markdown("---")
     
