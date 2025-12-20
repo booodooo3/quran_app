@@ -118,8 +118,7 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
         if ayah_res["code"] == 200 and tafsir_res["code"] == 200:
             return ayah_res["data"], tafsir_res["data"]
         return None, None
-    except Exception as e:
-        st.error(f"حدث خطأ في الاتصال: {e}")
+    except Exception:
         return None, None
 
 def analyze_marks(text):
