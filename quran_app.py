@@ -6,7 +6,7 @@ st.set_page_config(
     page_title="المصحف المعلم",
     page_icon="🕌",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # تنسيق CSS مخصص لدعم اللغة العربية والاتجاه من اليمين لليسار
@@ -142,38 +142,22 @@ def main():
         st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
         return
 
-    # القائمة الجانبية - معلومات السورة
-    with st.sidebar:
-        st.header("ℹ️ معلومات السورة")
-        
-        # اختيار السورة للتحكم (نستخدم حالة الجلسة للتزامن)
-        if 'selected_surah_idx' not in st.session_state:
-            st.session_state.selected_surah_idx = 0 # الفاتحة
-
-        # عرض المعلومات بناءً على السورة المختارة في القائمة الرئيسية
-        # (سنقوم بتحديث هذا القسم بعد اختيار السورة في المتن الرئيسي أو العكس)
-        # لتبسيط الأمر في ستريم ليت، سنجعل اختيار السورة في الشريط الجانبي أو الرئيسي يؤثر على الآخر
-        # هنا سنعرض معلومات السورة الحالية المخزنة في session_state
-        
-        current_surah_num = st.session_state.get('current_surah_num', 1)
-        current_surah = next((s for s in surahs if s["number"] == current_surah_num), surahs[0])
-        
-        revelation_order = SURAH_REVELATION_ORDER.get(current_surah["number"], "غير متوفر")
-        place = "مكية" if current_surah["revelationType"] == "Meccan" else "مدنية"
-        
+    # معلومات السورة (في الأعلى بدلاً من القائمة الجانبية)
+    current_surah_num = st.session_state.get('current_surah_num', 1)
+    current_surah = next((s for s in surahs if s["number"] == current_surah_num), surahs[0])
+    
+    revelation_order = SURAH_REVELATION_ORDER.get(current_surah["number"], "غير متوفر")
+    place = "مكية" if current_surah["revelationType"] == "Meccan" else "مدنية"
+    
+    with st.expander("ℹ️ معلومات السورة"):
         st.markdown(f"""
-        <div class="info-box">
+        <div class="info-box" style="margin-top: 0;">
             <div class="surah-info-item"><b>اسم السورة:</b> {current_surah["name"]} ({current_surah["englishName"]})</div>
             <div class="surah-info-item"><b>مكان النزول:</b> {place}</div>
             <div class="surah-info-item"><b>عدد الآيات:</b> {current_surah["numberOfAyahs"]}</div>
             <div class="surah-info-item"><b>ترتيب النزول الأصلي:</b> {revelation_order}</div>
-            <div class="surah-info-item"><b>وقت النزول:</b> تعتبر السورة {place}، نزلت {("قبل الهجرة" if place == "مكية" else "بعد الهجرة")}، وهي السورة رقم {revelation_order} في ترتيب النزول.</div>
-            <div class="surah-info-item"><b>أسباب النزول:</b> يمكن الاطلاع على أسباب نزول آيات هذه السورة في كتب التفسير المعتمدة.</div>
         </div>
         """, unsafe_allow_html=True)
-        
-        st.divider()
-        st.markdown("Developed by boood0003 © 2025")
 
     # لوحة التحكم الرئيسية
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -291,6 +275,17 @@ def main():
         full_audio_url = f"{full_url_base}{formatted_surah_num}.mp3"
         
         st.audio(full_audio_url, format="audio/mp3")
+
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style='text-align: center; color: #666; margin-top: 20px;'>
+            © 2025 Developed by boood0003<br>
+            <a href="https://analyzer-a.com" target="_blank" style="color: #0d47a1; text-decoration: none;">https://analyzer-a.com</a>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 if __name__ == "__main__":
     main()
