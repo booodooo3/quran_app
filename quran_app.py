@@ -258,8 +258,7 @@ def main():
         st.markdown("### 📚 التفسير الميسر")
         st.markdown(f'<div class="tafsir-box">{tafsir_data["text"]}</div>', unsafe_allow_html=True)
         
-    else:
-        st.warning("جاري تحميل البيانات...")
+
 
     st.markdown("---")
     
