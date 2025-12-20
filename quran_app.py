@@ -134,7 +134,7 @@ def analyze_marks(text):
 
 # التطبيق الرئيسي
 def main():
-    st.title("🕌 المصحف المعلم")
+    st.markdown("<h1 style='text-align: center;'>🕌 المصحف المعلم</h1>", unsafe_allow_html=True)
 
     # تحميل البيانات
     surahs = get_surahs()
