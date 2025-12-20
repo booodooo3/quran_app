@@ -247,10 +247,6 @@ def main():
             </ul>
             <b>علامات الوقف في الآية:</b>
             <ul>{marks_html}</ul>
-            <hr style="margin: 10px 0; border: 0; border-top: 1px solid #ccc;">
-            <ul>
-                <li><b>الجزء:</b> {ayah_data["juz"]} | <b>الحزب:</b> {ayah_data["hizbQuarter"]} | <b>الصفحة:</b> {ayah_data["page"]}</li>
-            </ul>
         </div>
         """, unsafe_allow_html=True)
         
