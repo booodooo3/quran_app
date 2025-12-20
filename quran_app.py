@@ -240,7 +240,7 @@ def main():
         st.markdown(f'<div class="tafsir-box">{tafsir_data["text"]}</div>', unsafe_allow_html=True)
         
     else:
-        st.warning("جاري تحميل البيانات...")
+        st.warning("جاري تحميل البيانات... (انتقل الى رقم الاية رقم 2)")
 
     st.markdown("---")
     
