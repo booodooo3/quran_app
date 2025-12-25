@@ -180,7 +180,9 @@ def get_full_surah_text(surah_num):
         response = requests.get(f"http://api.alquran.cloud/v1/surah/{surah_num}/quran-simple")
         if response.status_code == 200:
             data = response.json()["data"]
-            ayahs = [ayah["text"] for ayah in data["ayahs"]]
+            ayahs = []
+            for ayah in data["ayahs"]:
+                ayahs.append(f"{ayah['text']} ({ayah['numberInSurah']})")
             full_text = " ".join(ayahs)
             return data["name"], full_text
         return None, None
