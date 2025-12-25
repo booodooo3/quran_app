@@ -125,7 +125,14 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
         tafsir_res = requests.get(urls[1]).json()
         
         if ayah_res["code"] == 200 and tafsir_res["code"] == 200:
-            return ayah_res["data"], tafsir_res["data"]
+            data = ayah_res["data"]
+            # معالجة البسملة في العرض: حذفها من النص للآية الأولى (ما عدا الفاتحة)
+            if surah_num != 1 and ayah_num == 1:
+                basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
+                if data["text"].startswith(basmalah):
+                     data["text"] = data["text"][len(basmalah):].strip()
+            
+            return data, tafsir_res["data"]
         return None, None
     except Exception:
         # حل مشكلة سورة الفاتحة الآية 1 (البسملة) في حال فشل الاتصال
