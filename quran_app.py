@@ -1,5 +1,14 @@
 import streamlit as st
 import requests
+import os
+import io
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -149,6 +158,101 @@ def analyze_marks(text):
     if "ۚ" in text: marks.append("<b>ۚ (ج):</b> وقف جائز (يستوي الوقف والوصل)")
     if "ۛ" in text: marks.append("<b>ۛ (∴):</b> وقف تعانق (قف على أحد الموضعين ولا تقف على الآخر)")
     return marks
+
+def ensure_font_exists():
+    font_path = "Amiri-Regular.ttf"
+    if not os.path.exists(font_path):
+        url = "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                with open(font_path, "wb") as f:
+                    f.write(response.content)
+            else:
+                st.error("فشل تحميل ملف الخط.")
+        except Exception as e:
+            st.error(f"حدث خطأ أثناء تحميل الخط: {e}")
+    return font_path
+
+@st.cache_data
+def get_full_surah_text(surah_num):
+    try:
+        response = requests.get(f"http://api.alquran.cloud/v1/surah/{surah_num}/quran-simple")
+        if response.status_code == 200:
+            data = response.json()["data"]
+            ayahs = [ayah["text"] for ayah in data["ayahs"]]
+            full_text = " ".join(ayahs)
+            return data["name"], full_text
+        return None, None
+    except:
+        return None, None
+
+def create_pdf(surah_name, surah_text):
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
+    
+    font_path = ensure_font_exists()
+    try:
+        pdfmetrics.registerFont(TTFont('Amiri', font_path))
+    except:
+        pass
+    
+    # Title
+    c.setFont('Amiri', 24)
+    reshaped_title = arabic_reshaper.reshape(f"سورة {surah_name}")
+    bidi_title = get_display(reshaped_title)
+    c.drawCentredString(width / 2, height - 3 * cm, bidi_title)
+    
+    # Text Configuration
+    c.setFont('Amiri', 16)
+    y_position = height - 5 * cm
+    margin = 2 * cm
+    line_height = 0.8 * cm
+    max_width = width - 2 * margin
+    
+    # Processing Text
+    words = surah_text.split()
+    current_line = []
+    
+    for word in words:
+        current_line.append(word)
+        line_str = " ".join(current_line)
+        
+        # Check width
+        reshaped_line = arabic_reshaper.reshape(line_str)
+        bidi_line = get_display(reshaped_line)
+        text_width = c.stringWidth(bidi_line, 'Amiri', 16)
+        
+        if text_width > max_width:
+            # Line too long, remove last word and print
+            current_line.pop()
+            
+            # Print current line
+            line_str = " ".join(current_line)
+            reshaped_line = arabic_reshaper.reshape(line_str)
+            bidi_line = get_display(reshaped_line)
+            c.drawRightString(width - margin, y_position, bidi_line)
+            
+            y_position -= line_height
+            current_line = [word]
+            
+            # New Page Check
+            if y_position < margin:
+                c.showPage()
+                c.setFont('Amiri', 16)
+                y_position = height - margin
+    
+    # Print last line
+    if current_line:
+        line_str = " ".join(current_line)
+        reshaped_line = arabic_reshaper.reshape(line_str)
+        bidi_line = get_display(reshaped_line)
+        c.drawRightString(width - margin, y_position, bidi_line)
+        
+    c.save()
+    buffer.seek(0)
+    return buffer
 
 # التطبيق الرئيسي
 def main():
@@ -301,6 +405,36 @@ def main():
         full_audio_url = f"{full_url_base}{formatted_surah_num}.mp3"
         
         st.audio(full_audio_url, format="audio/mp3")
+
+    st.markdown("---")
+    st.markdown("### 📄 تحميل السورة (PDF)")
+    
+    pdf_key = f"pdf_{selected_surah_num}"
+    
+    if pdf_key not in st.session_state:
+        st.info("اضغط على الزر أدناه لتجهيز ملف PDF (نسخة طباعة: أبيض وأسود، بدون زخارف).")
+        if st.button("📥 تجهيز ملف PDF"):
+            with st.spinner("جاري إعداد الملف..."):
+                s_name_pdf, s_text_pdf = get_full_surah_text(selected_surah_num)
+                if s_name_pdf and s_text_pdf:
+                    pdf_data = create_pdf(s_name_pdf, s_text_pdf)
+                    st.session_state[pdf_key] = pdf_data
+                    st.rerun()
+    else:
+        st.success("ملف PDF جاهز للتحميل!")
+        col_dl_1, col_dl_2 = st.columns([1, 1])
+        with col_dl_1:
+            st.download_button(
+                label="⬇️ تحميل ملف PDF",
+                data=st.session_state[pdf_key],
+                file_name=f"Surah_{selected_surah_num}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        with col_dl_2:
+            if st.button("🔄 إعادة التجهيز", use_container_width=True):
+                del st.session_state[pdf_key]
+                st.rerun()
 
     st.markdown("---")
     st.markdown(
