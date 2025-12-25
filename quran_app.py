@@ -174,6 +174,10 @@ def ensure_font_exists():
             st.error(f"حدث خطأ أثناء تحميل الخط: {e}")
     return font_path
 
+def to_arabic_numerals(n):
+    digits = {'0': '٠', '1': '١', '2': '٢', '3': '٣', '4': '٤', '5': '٥', '6': '٦', '7': '٧', '8': '٨', '9': '٩'}
+    return "".join([digits[d] for d in str(n)])
+
 @st.cache_data
 def get_full_surah_text(surah_num):
     try:
@@ -182,7 +186,8 @@ def get_full_surah_text(surah_num):
             data = response.json()["data"]
             ayahs = []
             for ayah in data["ayahs"]:
-                ayahs.append(f"{ayah['text']} ({ayah['numberInSurah']})")
+                num = to_arabic_numerals(ayah['numberInSurah'])
+                ayahs.append(f"{ayah['text']} ﴿{num}﴾")
             full_text = " ".join(ayahs)
             return data["name"], full_text
         return None, None
@@ -411,7 +416,7 @@ def main():
     st.markdown("---")
     st.markdown("### 📄 تحميل السورة (PDF)")
     
-    pdf_key = f"pdf_{selected_surah_num}"
+    pdf_key = f"pdf_v2_{selected_surah_num}"
     
     if pdf_key not in st.session_state:
         st.info("اضغط على الزر أدناه لتجهيز ملف PDF (نسخة طباعة: أبيض وأسود، بدون زخارف).")
