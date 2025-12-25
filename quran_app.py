@@ -204,6 +204,19 @@ def main():
         current_surah_data = next((s for s in surahs if s["number"] == selected_surah_num), None)
         ayah_count = current_surah_data["numberOfAyahs"] if current_surah_data else 7
         
+        # أزرار التنقل بين الآيات
+        nav_col1, nav_col2 = st.columns(2)
+        with nav_col1:
+            if st.button("السابق (-)", key="prev_ayah", use_container_width=True):
+                if st.session_state.get('current_ayah_num', 1) > 1:
+                    st.session_state.current_ayah_num -= 1
+                    st.rerun()
+        with nav_col2:
+            if st.button("التالي (+)", key="next_ayah", use_container_width=True):
+                if st.session_state.get('current_ayah_num', 1) < ayah_count:
+                    st.session_state.current_ayah_num += 1
+                    st.rerun()
+
         selected_ayah_num = st.selectbox(
             "رقم الآية:",
             options=range(1, ayah_count + 1),
@@ -213,7 +226,7 @@ def main():
         
         if selected_ayah_num != st.session_state.get('current_ayah_num', 1):
             st.session_state.current_ayah_num = selected_ayah_num
-            # لا نحتاج rerun هنا لأن التغيير سيحدث تلقائياً عند الضغط
+            st.rerun()
 
     # زر العرض (في ستريم ليت التحديث فوري، لكن يمكن وضع زر للتأكيد أو جلب البيانات)
     # سنجلب البيانات مباشرة عند التغيير لسرعة الاستجابة
