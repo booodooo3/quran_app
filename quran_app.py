@@ -185,6 +185,15 @@ def get_full_surah_text(surah_num):
         if response.status_code == 200:
             data = response.json()["data"]
             ayahs = []
+            
+            # معالجة البسملة: حذفها من بداية الآية الأولى لكل السور ما عدا الفاتحة (رقم 1)
+            if surah_num != 1 and len(data["ayahs"]) > 0:
+                first_ayah_text = data["ayahs"][0]['text']
+                basmalah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+                if first_ayah_text.startswith(basmalah):
+                    # حذف البسملة وتنظيف المسافات الزائدة
+                    data["ayahs"][0]['text'] = first_ayah_text[len(basmalah):].strip()
+
             for ayah in data["ayahs"]:
                 num = to_arabic_numerals(ayah['numberInSurah'])
                 ayahs.append(f"{ayah['text']} ﴿{num}﴾")
@@ -416,7 +425,7 @@ def main():
     st.markdown("---")
     st.markdown("### 📄 تحميل السورة (PDF)")
     
-    pdf_key = f"pdf_v2_{selected_surah_num}"
+    pdf_key = f"pdf_v3_{selected_surah_num}"
     
     if pdf_key not in st.session_state:
         st.info("اضغط على الزر أدناه لتجهيز ملف PDF (نسخة طباعة: أبيض وأسود، بدون زخارف).")
