@@ -1,7 +1,9 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import os
 import io
+import json
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -35,7 +37,7 @@ st.markdown("""
     
     .quran-text {
         font-family: 'Amiri', serif;
-        font-size: 32px;
+        font-size: 34px;
         color: #0d47a1;
         text-align: center;
         background-color: #f5f7fa;
@@ -43,7 +45,7 @@ st.markdown("""
         border-radius: 12px;
         margin: 20px 0;
         border: 1px solid #e3e6e8;
-        line-height: 2.0;
+        line-height: 2.2;
     }
     
     .info-box {
@@ -69,23 +71,39 @@ st.markdown("""
         text-align: right;
     }
 
-    /* --- التعديلات الجديدة والجذرية لخانة الآية --- */
-    
-    /* 1. إجبار خانة رقم الآية (العمود الثالث) على أخذ اللون الأصفر */
+    /* --- تلوين خانة الآية (العمود الثالث) وإيقاف الكيبورد --- */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
         border-radius: 8px !important;
     }
     
-    /* 2. إخفاء مؤشر الكتابة ومنع النقر على حقل الإدخال لمنع الكيبورد في الجوال نهائياً */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] input {
         caret-color: transparent !important;
         pointer-events: none !important;
         font-size: 16px !important;
     }
-    /* ------------------------------------------- */
     
+    /* --- تنسيق جدول العلامات في القائمة الجانبية --- */
+    .signs-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+    .signs-table td {
+        border-bottom: 1px solid #ddd;
+        padding: 12px 8px;
+        font-size: 15px;
+        line-height: 1.6;
+    }
+    .sign-symbol {
+        color: #d32f2f !important;
+        font-weight: bold;
+        font-family: 'Amiri', serif;
+        font-size: 26px;
+        text-align: center;
+        width: 40px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,12 +125,6 @@ REVELATION_ORDER_LIST = [
 
 SURAH_REVELATION_ORDER = {surah: i + 1 for i, surah in enumerate(REVELATION_ORDER_LIST)}
 
-FULL_SURAH_URLS = {
-    "ar.minshawi": "https://server10.mp3quran.net/minsh/",
-    "ar.husary": "https://server13.mp3quran.net/husr/",
-    "ar.parhizgar": "https://tanzil.net/res/audio/parhizgar/"
-}
-
 RECITERS = {
     "ar.minshawi": "الشيخ محمد صديق المنشاوي",
     "ar.husary": "الشيخ محمود خليل الحصري",
@@ -126,6 +138,17 @@ def get_surahs():
         response = requests.get("https://api.alquran.cloud/v1/surah")
         if response.status_code == 200:
             return response.json()["data"]
+        return []
+    except:
+        return []
+
+@st.cache_data
+def get_surah_with_audio_array(surah_num, reciter_id):
+    """جلب السورة كاملة كآيات منفصلة مع روابط الصوت الخاص بها للتتبع الذكي"""
+    try:
+        res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/{reciter_id}").json()
+        if res['code'] == 200:
+            return res['data']['ayahs']
         return []
     except:
         return []
@@ -146,38 +169,22 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
                 basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
                 if data["text"].startswith(basmalah):
                      data["text"] = data["text"][len(basmalah):].strip()
-            
             return data, tafsir_res["data"]
         return None, None
     except Exception:
-        if surah_num == 1 and ayah_num == 1:
-            fallback_ayah = {
-                "number": 1,
-                "text": "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
-                "audio": f"https://cdn.islamic.network/quran/audio/128/{reciter_id}/1.mp3",
-                "numberInSurah": 1,
-                "juz": 1,
-                "manzil": 1,
-                "page": 1,
-                "ruku": 1,
-                "hizbQuarter": 1,
-                "sajda": False
-            }
-            fallback_tafsir = {
-                "text": "سورة الفاتحة سميت هذه السورة بالفاتحة؛ لأنه يفتتح بها القرآن العظيم، وتسمى المثاني؛ لأنها تقرأ في كل ركعة، ولها أسماء أخر. أبتدئ قراءة القرآن باسم الله مستعينا به، (اللهِ) علم على الرب -تبارك وتعالى- المعبود بحق دون سواه، وهو أخص أسماء الله تعالى، ولا يسمى به غيره سبحانه. (الرَّحْمَنِ) ذي الرحمة العامة الذي وسعت رحمته جميع الخلق، (الرَّحِيمِ) بالمؤمنين، وهما اسمان من أسماء الله تعالى، يتضمنان إثبات صفة الرحمة لله تعالى كما يليق بجلاله."
-            }
-            return fallback_ayah, fallback_tafsir
-            
         return None, None
 
 def analyze_marks(text):
     marks = []
-    if "ۖ" in text: marks.append("<b>ۖ (صلى):</b> الوصل أولى (الاستمرارية أفضل مع جواز الوقف)")
-    if "ۗ" in text: marks.append("<b>ۗ (قلى):</b> الوقف أولى (الوقف أفضل مع جواز الوصل)")
-    if "ۘ" in text: marks.append("<b>ۘ (مـ):</b> وقف لازم (يجب الوقف)")
-    if "ۙ" in text: marks.append("<b>ۙ (لا):</b> لا تقف (يجب الوصل)")
-    if "ۚ" in text: marks.append("<b>ۚ (ج):</b> وقف جائز (يستوي الوقف والوصل)")
-    if "ۛ" in text: marks.append("<b>ۛ (∴):</b> وقف تعانق (قف على أحد الموضعين ولا تقف على الآخر)")
+    if "ۖ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۖ (صلے):</span> تُفِيدُ بِأَنَّ الْوَصْلَ أَوْلَى مَعَ جَوَازِ الْوَقْفِ")
+    if "ۗ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۗ (قلے):</span> تُفِيدُ بِأَنَّ الْوَقْفَ أَوْلَى")
+    if "ۘ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۘ (مـ):</span> تُفِيدُ لُزُومَ الْوَقْفِ")
+    if "ۙ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۙ (لا):</span> تُفِيدُ النَّهْيَ عَنِ الْوَقْفِ")
+    if "ۚ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۚ (ج):</span> تُفِيدُ جَوَازَ الْوَقْفِ")
+    if "ۛ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۛ (∴):</span> تُفِيدُ جَوَازَ الْوَقْفِ بِأَحَدِ الْمَوْضِعَيْنِ وَلَيْسَ فِي كِلَيْهِمَا")
+    if "ۢ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۢ (م):</span> لِلدَّلَالَةِ عَلَى وُجُودِ الْإِقْلَابِ")
+    if "ۡ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۡ (حـ):</span> لِلدَّلَالَةِ عَلَى سُكُونِ الْحَرْفِ")
+    if "ۤ" in text or "ٓ" in text: marks.append("<span style='color:red; font-weight:bold;'>~ :</span> لِلدَّلَالَةِ عَلَى لُزُومِ الْمَدِّ الزَّائِدِ")
     return marks
 
 def ensure_font_exists():
@@ -189,10 +196,8 @@ def ensure_font_exists():
             if response.status_code == 200:
                 with open(font_path, "wb") as f:
                     f.write(response.content)
-            else:
-                st.error("فشل تحميل ملف الخط.")
         except Exception as e:
-            st.error(f"حدث خطأ أثناء تحميل الخط: {e}")
+            pass
     return font_path
 
 def to_arabic_numerals(n):
@@ -206,7 +211,6 @@ def get_full_surah_text(surah_num):
         if response.status_code == 200:
             data = response.json()["data"]
             ayahs = []
-            
             if surah_num != 1 and len(data["ayahs"]) > 0:
                 first_ayah_text = data["ayahs"][0]['text']
                 basmalah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
@@ -233,43 +237,35 @@ def create_pdf(surah_name, surah_text):
     except:
         pass
     
-    # Title
     c.setFont('Amiri', 24)
     reshaped_title = arabic_reshaper.reshape(f"سورة {surah_name}")
     bidi_title = get_display(reshaped_title)
     c.drawCentredString(width / 2, height - 3 * cm, bidi_title)
     
-    # Text Configuration
     c.setFont('Amiri', 16)
     y_position = height - 5 * cm
     margin = 2 * cm
     line_height = 0.8 * cm
     max_width = width - 2 * margin
     
-    # Processing Text
     words = surah_text.split()
     current_line = []
     
     for word in words:
         current_line.append(word)
         line_str = " ".join(current_line)
-        
-        # Check width
         reshaped_line = arabic_reshaper.reshape(line_str)
         bidi_line = get_display(reshaped_line)
         text_width = c.stringWidth(bidi_line, 'Amiri', 16)
         
         if text_width > max_width:
             current_line.pop()
-            
             line_str = " ".join(current_line)
             reshaped_line = arabic_reshaper.reshape(line_str)
             bidi_line = get_display(reshaped_line)
             c.drawRightString(width - margin, y_position, bidi_line)
-            
             y_position -= line_height
             current_line = [word]
-            
             if y_position < margin:
                 c.showPage()
                 c.setFont('Amiri', 16)
@@ -288,6 +284,31 @@ def create_pdf(surah_name, surah_text):
 # التطبيق الرئيسي
 def main():
     st.markdown("<h1 style='text-align: center;'>🕌 المصحف المعلم</h1>", unsafe_allow_html=True)
+
+    with st.sidebar:
+        st.header("📖 علامات الوقف ومصطلحات الضبط")
+        st.markdown("""
+        <table class="signs-table">
+            <tr><td class="sign-symbol">مـ</td><td>تُفِيدُ لُزُومَ الْوَقْفِ</td></tr>
+            <tr><td class="sign-symbol">لا</td><td>تُفِيدُ النَّهْيَ عَنِ الْوَقْفِ</td></tr>
+            <tr><td class="sign-symbol">صلے</td><td>تُفِيدُ بِأَنَّ الْوَصْلَ أَوْلَى مَعَ جَوَازِ الْوَقْفِ</td></tr>
+            <tr><td class="sign-symbol">قلے</td><td>تُفِيدُ بِأَنَّ الْوَقْفَ أَوْلَى</td></tr>
+            <tr><td class="sign-symbol">ج</td><td>تُفِيدُ جَوَازَ الْوَقْفِ</td></tr>
+            <tr><td class="sign-symbol">∴ ∴</td><td>تُفِيدُ جَوَازَ الْوَقْفِ بِأَحَدِ الْمَوْضِعَيْنِ وَلَيْسَ فِي كِلَيْهِمَا</td></tr>
+            <tr><td class="sign-symbol">°</td><td>لِلدَّلَالَةِ عَلَى زِيَادَةِ الْحَرْفِ وَعَدَمِ النُّطْقِ بِهِ</td></tr>
+            <tr><td class="sign-symbol">0</td><td>لِلدَّلَالَةِ عَلَى زِيَادَةِ الْحَرْفِ حِينَ الْوَصْلِ</td></tr>
+            <tr><td class="sign-symbol">حـ</td><td>لِلدَّلَالَةِ عَلَى سُكُونِ الْحَرْفِ (رأس خاء بدون نقطة)</td></tr>
+            <tr><td class="sign-symbol">م</td><td>لِلدَّلَالَةِ عَلَى وُجُودِ الْإِقْلَابِ</td></tr>
+            <tr><td class="sign-symbol">ــٌـ</td><td>لِلدَّلَالَةِ عَلَى إِظْهَارِ التَّنْوِينِ</td></tr>
+            <tr><td class="sign-symbol">ــًـ</td><td>لِلدَّلَالَةِ عَلَى الْإِدْغَامِ وَالْإِخْفَاءِ</td></tr>
+            <tr><td class="sign-symbol">ــّـ</td><td>لِلدَّلَالَةِ عَلَى وُجُوبِ النُّطْقِ بِالْحَرْفِ الْمَتْرُوكِ</td></tr>
+            <tr><td class="sign-symbol">س</td><td>لِلدَّلَالَةِ عَلَى وُجُوبِ النُّطْقِ بِالسِّينِ بَدَلَ الصَّادِ</td></tr>
+            <tr><td class="sign-symbol">~</td><td>لِلدَّلَالَةِ عَلَى لُزُومِ الْمَدِّ الزَّائِدِ</td></tr>
+            <tr><td class="sign-symbol">۩</td><td>لِلدَّلَالَةِ عَلَى مَوْضِعِ السُّجُودِ...</td></tr>
+            <tr><td class="sign-symbol">۞</td><td>لِلدَّلَالَةِ عَلَى بِدَايَةِ الْأَجْزَاءِ وَالْأَحْزَابِ وَأَنْصَافِهَا وَأَرْبَاعِهَا</td></tr>
+            <tr><td class="sign-symbol">۝</td><td>لِلدَّلَالَةِ عَلَى نِهَايَةِ الْآيَةِ وَرَقْمِهَا</td></tr>
+        </table>
+        """, unsafe_allow_html=True)
 
     surahs = get_surahs()
     if not surahs:
@@ -367,20 +388,19 @@ def main():
         sajda_text = "لا يوجد سجدة"
         if ayah_data.get("sajda"):
             if isinstance(ayah_data["sajda"], dict):
-                sajda_text = "✅ يوجد سجدة تلاوة (واجبة)" if ayah_data["sajda"].get("obligatory") else "✅ يوجد سجدة تلاوة (مستحبة)"
+                sajda_text = "✅ <span style='color:red;'>يوجد سجدة تلاوة (واجبة)</span>" if ayah_data["sajda"].get("obligatory") else "✅ <span style='color:red;'>يوجد سجدة تلاوة (مستحبة)</span>"
             else:
-                sajda_text = "✅ يوجد سجدة تلاوة"
+                sajda_text = "✅ <span style='color:red;'>يوجد سجدة تلاوة</span>"
 
         marks = analyze_marks(ayah_data["text"])
         marks_html = "".join([f"<li>{m}</li>" for m in marks]) if marks else "<li>لا توجد علامات وقف خاصة في هذه الآية.</li>"
         
         st.markdown(f"""
         <div class="info-box">
-            <b>📌 علامات القراءة (الوقف، السجود، الاستمرارية):</b><br>
+            <b>📌 علامات القراءة في الآية الحالية:</b><br>
             <ul>
                 <li><b>السجود:</b> {sajda_text}</li>
             </ul>
-            <b>علامات الوقف في الآية:</b>
             <ul>{marks_html}</ul>
         </div>
         """, unsafe_allow_html=True)
@@ -390,7 +410,11 @@ def main():
         
     st.markdown("---")
     
-    st.markdown("### 📼 السورة كاملة")
+    # ==========================================
+    # قسم التتبع الصوتي الذكي (Audio-Text Sync)
+    # ==========================================
+    st.markdown("### 📼 السورة كاملة (مع التتبع الصوتي الذكي 🟡)")
+    st.info("اضغط على زر التشغيل لبدء التلاوة، وسيتم تظليل الآية المقروءة باللون الأصفر. يمكنك الضغط على أي آية للانتقال إليها مباشرة.")
     
     revelation_sorted_surahs = []
     for surah_num in REVELATION_ORDER_LIST:
@@ -411,11 +435,191 @@ def main():
     )
     
     if selected_full_surah:
-        full_url_base = FULL_SURAH_URLS[reciter_key]
-        formatted_surah_num = str(selected_full_surah["number"]).zfill(3)
-        full_audio_url = f"{full_url_base}{formatted_surah_num}.mp3"
-        
-        st.audio(full_audio_url, format="audio/mp3")
+        with st.spinner("جاري تهيئة المشغل الذكي..."):
+            ayahs_audio_data = get_surah_with_audio_array(selected_full_surah["number"], reciter_key)
+            
+            if ayahs_audio_data:
+                # تجهيز البيانات لتمريرها إلى جافاسكريبت
+                js_ayahs = []
+                basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
+                for i, a in enumerate(ayahs_audio_data):
+                    text = a["text"]
+                    # مسح البسملة من أول آية في العرض (باستثناء الفاتحة)
+                    if selected_full_surah["number"] != 1 and i == 0 and text.startswith(basmalah):
+                        text = text[len(basmalah):].strip()
+                    js_ayahs.append({"text": text, "audio": a["audio"], "num": a["numberInSurah"]})
+                
+                # تحويل القائمة إلى نص JSON
+                js_data_string = json.dumps(js_ayahs)
+                
+                # كود HTML & JavaScript للمشغل الذكي
+                smart_player_html = f"""
+                <!DOCTYPE html>
+                <html dir="rtl" lang="ar">
+                <head>
+                    <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+                    <style>
+                        body {{ 
+                            font-family: 'Amiri', serif; 
+                            background: #f5f7fa; 
+                            padding: 20px; 
+                            margin: 0;
+                            border-radius: 10px; 
+                        }}
+                        .ayah {{ 
+                            font-size: 30px; 
+                            line-height: 2.2; 
+                            color: #0d47a1; 
+                            transition: background-color 0.3s; 
+                            cursor: pointer; 
+                            padding: 3px 8px; 
+                            border-radius: 8px; 
+                        }}
+                        .ayah:hover {{ background-color: #e0e0e0; }}
+                        .active {{ 
+                            background-color: #FFF9C4 !important; 
+                            border-bottom: 2px solid #FBC02D; 
+                            color: #000;
+                        }}
+                        .controls {{ 
+                            text-align: center; 
+                            margin-bottom: 20px; 
+                            position: sticky; 
+                            top: 0; 
+                            background: rgba(245, 247, 250, 0.95); 
+                            padding: 15px; 
+                            z-index: 100; 
+                            border-bottom: 2px solid #ddd;
+                            border-radius: 10px;
+                            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                        }}
+                        button {{ 
+                            font-family: 'Cairo', sans-serif; 
+                            font-size: 16px; 
+                            font-weight: bold;
+                            padding: 10px 20px; 
+                            margin: 5px; 
+                            cursor: pointer; 
+                            border: none; 
+                            border-radius: 5px; 
+                            background: #00695c; 
+                            color: white; 
+                            transition: 0.2s;
+                        }}
+                        button:hover {{ background: #004d40; transform: scale(1.05); }}
+                        #status {{ display: block; margin-top: 10px; font-family: 'Cairo', sans-serif; font-size: 15px; color: #d32f2f; font-weight: bold; }}
+                    </style>
+                </head>
+                <body>
+                    <div class="controls">
+                        <button id="playBtn" onclick="togglePlay()">▶ تشغيل السورة</button>
+                        <button onclick="nextAyah()">⏭ الآية التالية</button>
+                        <button onclick="prevAyah()">⏮ الآية السابقة</button>
+                        <span id="status">جاهز للتشغيل</span>
+                    </div>
+                    
+                    <div id="quran-container" style="text-align: justify; text-justify: inter-word;"></div>
+
+                    <script>
+                        const ayahs = {js_data_string};
+                        let currentIndex = 0;
+                        let audio = new Audio();
+                        let isPlaying = false;
+
+                        const container = document.getElementById('quran-container');
+                        const playBtn = document.getElementById('playBtn');
+                        const statusText = document.getElementById('status');
+
+                        function toArabicNumerals(num) {{
+                            const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+                            return num.toString().replace(/[0-9]/g, w => digits[+w]);
+                        }}
+
+                        function renderText() {{
+                            let html = '';
+                            ayahs.forEach((a, i) => {{
+                                html += `<span class="ayah ${{i === currentIndex ? 'active' : ''}}" id="ayah-${{i}}" onclick="playSpecific(${{i}})">${{a.text}} ﴿${{toArabicNumerals(a.num)}}﴾</span> `;
+                            }});
+                            container.innerHTML = html;
+                            
+                            // تمرير الشاشة تلقائياً للآية المظللة
+                            const activeEl = document.getElementById(`ayah-${{currentIndex}}`);
+                            if(activeEl) {{
+                                activeEl.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                            }}
+                        }}
+
+                        function loadAudio() {{
+                            audio.src = ayahs[currentIndex].audio;
+                            audio.load();
+                            renderText();
+                            statusText.innerText = "🔊 جاري تلاوة الآية: " + ayahs[currentIndex].num;
+                        }}
+
+                        function togglePlay() {{
+                            if (isPlaying) {{
+                                audio.pause();
+                                isPlaying = false;
+                                playBtn.innerText = "▶ إكمال التلاوة";
+                                statusText.innerText = "⏸ متوقف مؤقتاً عند الآية: " + ayahs[currentIndex].num;
+                            }} else {{
+                                if(!audio.src || audio.src === "") loadAudio();
+                                audio.play();
+                                isPlaying = true;
+                                playBtn.innerText = "⏸ إيقاف مؤقت";
+                            }}
+                        }}
+
+                        function playSpecific(index) {{
+                            currentIndex = index;
+                            loadAudio();
+                            audio.play();
+                            isPlaying = true;
+                            playBtn.innerText = "⏸ إيقاف مؤقت";
+                        }}
+
+                        function nextAyah() {{
+                            if (currentIndex < ayahs.length - 1) {{
+                                currentIndex++;
+                                loadAudio();
+                                if(isPlaying) audio.play();
+                            }}
+                        }}
+
+                        function prevAyah() {{
+                            if (currentIndex > 0) {{
+                                currentIndex--;
+                                loadAudio();
+                                if(isPlaying) audio.play();
+                            }}
+                        }}
+
+                        audio.onended = function() {{
+                            if (currentIndex < ayahs.length - 1) {{
+                                currentIndex++;
+                                loadAudio();
+                                audio.play();
+                            }} else {{
+                                isPlaying = false;
+                                playBtn.innerText = "▶ إعادة التشغيل";
+                                statusText.innerText = "✅ انتهت السورة";
+                                currentIndex = 0;
+                                renderText(); // لإزالة التظليل
+                            }}
+                        }};
+                        
+                        audio.onwaiting = function() {{ statusText.innerText = "⏳ جاري التحميل..."; }};
+                        audio.onerror = function() {{ statusText.innerText = "❌ خطأ في تحميل الصوت. تأكد من الإنترنت."; }};
+
+                        // تشغيل مبدئي لرسم النص
+                        renderText();
+                    </script>
+                </body>
+                </html>
+                """
+                
+                # حقن كود الـ HTML والمشغل داخل Streamlit
+                components.html(smart_player_html, height=650, scrolling=True)
 
     st.markdown("---")
     st.markdown("### 📄 تحميل السورة (PDF)")
@@ -451,7 +655,7 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #666; margin-top: 20px;'>
-            © 2026 Developed by boood0003<br>
+            © 2025 Developed by boood0003<br>
             <a href="https://analyzer-a.com" target="_blank" style="color: #0d47a1; text-decoration: none;">https://analyzer-a.com</a>
         </div>
         """,
