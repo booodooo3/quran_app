@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# تنسيق CSS مخصص لدعم اللغة العربية والاتجاه من اليمين لليسار
+# تنسيق CSS مخصص لدعم اللغة العربية والتعديلات المطلوبة
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;700&display=swap');
@@ -65,10 +65,27 @@ st.markdown("""
         line-height: 1.8;
     }
     
-    /* تعديل اتجاه القائمة الجانبية والعناصر */
     .css-16idsys p {
         text-align: right;
     }
+
+    /* --- التعديلات الجديدة والجذرية لخانة الآية --- */
+    
+    /* 1. إجبار خانة رقم الآية (العمود الثالث) على أخذ اللون الأصفر */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
+        background-color: #FFF9C4 !important; 
+        border: 2px solid #FBC02D !important;
+        border-radius: 8px !important;
+    }
+    
+    /* 2. إخفاء مؤشر الكتابة ومنع النقر على حقل الإدخال لمنع الكيبورد في الجوال نهائياً */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] input {
+        caret-color: transparent !important;
+        pointer-events: none !important;
+        font-size: 16px !important;
+    }
+    /* ------------------------------------------- */
+    
 </style>
 """, unsafe_allow_html=True)
 
@@ -106,7 +123,7 @@ RECITERS = {
 @st.cache_data
 def get_surahs():
     try:
-        response = requests.get("http://api.alquran.cloud/v1/surah")
+        response = requests.get("https://api.alquran.cloud/v1/surah")
         if response.status_code == 200:
             return response.json()["data"]
         return []
@@ -116,30 +133,27 @@ def get_surahs():
 def get_ayah_data(surah_num, ayah_num, reciter_id):
     try:
         urls = [
-            f"http://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}",
-            f"http://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/ar.muyassar"
+            f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}",
+            f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/ar.muyassar"
         ]
         
-        # لا يمكن استخدام Promise.all هنا، نقوم بطلبات متتالية أو متوازية بسيطة
         ayah_res = requests.get(urls[0]).json()
         tafsir_res = requests.get(urls[1]).json()
         
         if ayah_res["code"] == 200 and tafsir_res["code"] == 200:
             data = ayah_res["data"]
-            # معالجة البسملة في العرض: حذفها من النص للآية الأولى (ما عدا الفاتحة)
             if surah_num != 1 and ayah_num == 1:
-                basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
+                basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
                 if data["text"].startswith(basmalah):
                      data["text"] = data["text"][len(basmalah):].strip()
             
             return data, tafsir_res["data"]
         return None, None
     except Exception:
-        # حل مشكلة سورة الفاتحة الآية 1 (البسملة) في حال فشل الاتصال
         if surah_num == 1 and ayah_num == 1:
             fallback_ayah = {
                 "number": 1,
-                "text": "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
+                "text": "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
                 "audio": f"https://cdn.islamic.network/quran/audio/128/{reciter_id}/1.mp3",
                 "numberInSurah": 1,
                 "juz": 1,
@@ -150,7 +164,7 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
                 "sajda": False
             }
             fallback_tafsir = {
-                "text": "سورة الفاتحة سميت هذه السورة بالفاتحة؛ لأنه يفتتح بها القرآن العظيم، وتسمى المثاني؛ لأنها تقرأ في كل ركعة، ولها أسماء أخر. أبتدئ قراءة القرآن باسم الله مستعينا به، (اللهِ) علم على الرب -تبارك وتعالى- المعبود بحق دون سواه، وهو أخص أسماء الله تعالى، ولا يسمى به غيره سبحانه. (الرَّحْمَنِ) ذي الرحمة العامة الذي وسعت رحمته جميع الخلق، (الرَّحِيمِ) بالمؤمنين، وهما اسمان من أسماء الله تعالى، يتضمنان إثبات صفة الرحمة لله تعالى كما يليق بجلاله."
+                "text": "سورة الفاتحة سميت هذه السورة بالفاتحة؛ لأنه يفتتح بها القرآن العظيم، وتسمى المثاني؛ لأنها تقرأ في كل ركعة، ولها أسماء أخر. أبتدئ قراءة القرآن باسم الله مستعينا به، (اللهِ) علم على الرب -تبارك وتعالى- المعبود بحق دون سواه، وهو أخص أسماء الله تعالى، ولا يسمى به غيره سبحانه. (الرَّحْمَنِ) ذي الرحمة العامة الذي وسعت رحمته جميع الخلق، (الرَّحِيمِ) بالمؤمنين، وهما اسمان من أسماء الله تعالى، يتضمنان إثبات صفة الرحمة لله تعالى كما يليق بجلاله."
             }
             return fallback_ayah, fallback_tafsir
             
@@ -188,17 +202,15 @@ def to_arabic_numerals(n):
 @st.cache_data
 def get_full_surah_text(surah_num):
     try:
-        response = requests.get(f"http://api.alquran.cloud/v1/surah/{surah_num}/quran-simple")
+        response = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-simple")
         if response.status_code == 200:
             data = response.json()["data"]
             ayahs = []
             
-            # معالجة البسملة: حذفها من بداية الآية الأولى لكل السور ما عدا الفاتحة (رقم 1)
             if surah_num != 1 and len(data["ayahs"]) > 0:
                 first_ayah_text = data["ayahs"][0]['text']
-                basmalah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+                basmalah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
                 if first_ayah_text.startswith(basmalah):
-                    # حذف البسملة وتنظيف المسافات الزائدة
                     data["ayahs"][0]['text'] = first_ayah_text[len(basmalah):].strip()
 
             for ayah in data["ayahs"]:
@@ -248,10 +260,8 @@ def create_pdf(surah_name, surah_text):
         text_width = c.stringWidth(bidi_line, 'Amiri', 16)
         
         if text_width > max_width:
-            # Line too long, remove last word and print
             current_line.pop()
             
-            # Print current line
             line_str = " ".join(current_line)
             reshaped_line = arabic_reshaper.reshape(line_str)
             bidi_line = get_display(reshaped_line)
@@ -260,13 +270,11 @@ def create_pdf(surah_name, surah_text):
             y_position -= line_height
             current_line = [word]
             
-            # New Page Check
             if y_position < margin:
                 c.showPage()
                 c.setFont('Amiri', 16)
                 y_position = height - margin
     
-    # Print last line
     if current_line:
         line_str = " ".join(current_line)
         reshaped_line = arabic_reshaper.reshape(line_str)
@@ -281,13 +289,11 @@ def create_pdf(surah_name, surah_text):
 def main():
     st.markdown("<h1 style='text-align: center;'>🕌 المصحف المعلم</h1>", unsafe_allow_html=True)
 
-    # تحميل البيانات
     surahs = get_surahs()
     if not surahs:
         st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
         return
 
-    # معلومات السورة (في الأعلى بدلاً من القائمة الجانبية)
     current_surah_num = st.session_state.get('current_surah_num', 1)
     current_surah = next((s for s in surahs if s["number"] == current_surah_num), surahs[0])
     
@@ -304,14 +310,12 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    # لوحة التحكم الرئيسية
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col1:
         reciter_key = st.selectbox("🎙️ القارئ:", options=list(RECITERS.keys()), format_func=lambda x: RECITERS[x])
     
     with col2:
-        # إنشاء قائمة السور للعرض
         surah_options = {s["number"]: f"{s['number']}. {s['name']} ({s['numberOfAyahs']} آية)" for s in surahs}
         selected_surah_num = st.selectbox(
             "اختر السورة:",
@@ -320,18 +324,15 @@ def main():
             index=current_surah_num - 1
         )
         
-        # تحديث السورة الحالية في الجلسة
         if selected_surah_num != st.session_state.get('current_surah_num', 1):
             st.session_state.current_surah_num = selected_surah_num
-            st.session_state.current_ayah_num = 1 # إعادة تعيين الآية للأولى
+            st.session_state.current_ayah_num = 1
             st.rerun()
 
     with col3:
-        # اختيار الآية
         current_surah_data = next((s for s in surahs if s["number"] == selected_surah_num), None)
         ayah_count = current_surah_data["numberOfAyahs"] if current_surah_data else 7
         
-        # أزرار التنقل بين الآيات
         nav_col1, nav_col2 = st.columns(2)
         with nav_col1:
             if st.button("السابق (-)", key="prev_ayah", use_container_width=True):
@@ -355,20 +356,14 @@ def main():
             st.session_state.current_ayah_num = selected_ayah_num
             st.rerun()
 
-    # زر العرض (في ستريم ليت التحديث فوري، لكن يمكن وضع زر للتأكيد أو جلب البيانات)
-    # سنجلب البيانات مباشرة عند التغيير لسرعة الاستجابة
-    
     ayah_data, tafsir_data = get_ayah_data(selected_surah_num, selected_ayah_num, reciter_key)
     
     if ayah_data and tafsir_data:
-        # عرض النص القرآني
         st.markdown(f'<div class="quran-text">{ayah_data["text"]}</div>', unsafe_allow_html=True)
         
-        # مشغل الصوت للآية
         st.markdown("### 🎧 تلاوة الآية")
         st.audio(ayah_data["audio"], format="audio/mp3")
         
-        # صندوق المعلومات (علامات الوقف والسجود)
         sajda_text = "لا يوجد سجدة"
         if ayah_data.get("sajda"):
             if isinstance(ayah_data["sajda"], dict):
@@ -390,26 +385,19 @@ def main():
         </div>
         """, unsafe_allow_html=True)
         
-        # التفسير
         st.markdown("### 📚 التفسير الميسر")
         st.markdown(f'<div class="tafsir-box">{tafsir_data["text"]}</div>', unsafe_allow_html=True)
         
-
-
     st.markdown("---")
     
-    # قسم السورة الكاملة
     st.markdown("### 📼 السورة كاملة")
     
-    # تحضير قائمة السور حسب ترتيب النزول
     revelation_sorted_surahs = []
     for surah_num in REVELATION_ORDER_LIST:
         s = next((surah for surah in surahs if surah["number"] == surah_num), None)
         if s:
             revelation_sorted_surahs.append(s)
             
-    # اختيار السورة الكاملة (افتراضياً نفس السورة المختارة بالأعلى)
-    # نحتاج للبحث عن index السورة الحالية في القائمة المرتبة حسب النزول
     try:
         current_rev_index = next(i for i, s in enumerate(revelation_sorted_surahs) if s["number"] == selected_surah_num)
     except StopIteration:
