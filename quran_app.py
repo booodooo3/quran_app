@@ -655,7 +655,7 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #666; margin-top: 20px;'>
-            © 2025 Developed by boood0003<br>
+            © 2026 Developed by boood0003<br>
             <a href="https://analyzer-a.com" target="_blank" style="color: #0d47a1; text-decoration: none;">https://analyzer-a.com</a>
         </div>
         """,
