@@ -20,15 +20,20 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# تنسيق CSS مخصص
+# تنسيق CSS مخصص وآمن للجوال
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;700&display=swap');
     
-    html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
+    /* تطبيق الاتجاه العربي بشكل آمن لا يكسر تصميم Streamlit في الجوال */
+    .block-container, [data-testid="stSidebarContent"] {
         direction: rtl;
         text-align: right;
+        font-family: 'Cairo', sans-serif;
+    }
+    
+    p, div, span, h1, h2, h3, h4, h5, h6 {
+        font-family: 'Cairo', sans-serif;
     }
     
     .stSelectbox, .stNumberInput {
@@ -56,21 +61,8 @@ st.markdown("""
         margin-top: 15px;
         font-size: 16px;
     }
-    
-    .tafsir-box {
-        background-color: #fff9c4;
-        border-right: 6px solid #fbc02d;
-        padding: 20px;
-        border-radius: 8px;
-        margin-top: 15px;
-        font-size: 18px;
-        line-height: 1.8;
-    }
-    
-    .css-16idsys p {
-        text-align: right;
-    }
 
+    /* --- تلوين خانة الآية (العمود الثالث) وإيقاف الكيبورد --- */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
@@ -83,6 +75,7 @@ st.markdown("""
         font-size: 16px !important;
     }
     
+    /* --- تنسيق جدول العلامات في القائمة الجانبية --- */
     .signs-table {
         width: 100%;
         border-collapse: collapse;
@@ -131,14 +124,12 @@ RECITERS = {
 
 # --- دالة تلوين العلامات القرآنية بالأحمر ---
 def colorize_marks(text):
-    # قائمة بجميع علامات الوقف والضبط في الرسم العثماني
     marks = [
-        "ۖ", "ۗ", "ۘ", "ۙ", "ۚ", "ۛ", # علامات الوقف
-        "ۢ", "ۡ", "ۤ", "ٓ", "ۜ", "۟", "۠", # الإقلاب، السكون، المد، السكتة، الصفر المستدير والمستطيل
-        "۩", "۞" # السجدة ونصف الحزب
+        "ۖ", "ۗ", "ۘ", "ۙ", "ۚ", "ۛ", 
+        "ۢ", "ۡ", "ۤ", "ٓ", "ۜ", "۟", "۠", 
+        "۩", "۞" 
     ]
     for mark in marks:
-        # استبدال العلامة بنسخة ملونة بالأحمر عبر HTML
         text = text.replace(mark, f"<span style='color:#d32f2f; font-weight:bold;'>{mark}</span>")
     return text
 
@@ -155,11 +146,8 @@ def get_surahs():
 
 @st.cache_data
 def get_surah_with_audio_array(surah_num, reciter_id):
-    """جلب السورة كاملة بالرسم العثماني والصوت"""
     try:
-        # جلب النص العثماني للحصول على العلامات بدقة
         text_res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-uthmani").json()
-        # جلب الصوت للقارئ المختار
         audio_res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/{reciter_id}").json()
         
         if text_res['code'] == 200 and audio_res['code'] == 200:
@@ -178,17 +166,15 @@ def get_surah_with_audio_array(surah_num, reciter_id):
         return []
 
 def get_ayah_data(surah_num, ayah_num, reciter_id):
+    """جلب الآية بدون التفسير الميسر"""
     try:
-        # نستخدم quran-uthmani لضمان وجود العلامات
         url_text = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/quran-uthmani"
         url_audio = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}"
-        url_tafsir = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/ar.muyassar"
         
         text_res = requests.get(url_text).json()
         audio_res = requests.get(url_audio).json()
-        tafsir_res = requests.get(url_tafsir).json()
         
-        if text_res["code"] == 200 and audio_res["code"] == 200 and tafsir_res["code"] == 200:
+        if text_res["code"] == 200 and audio_res["code"] == 200:
             text_data = text_res["data"]["text"]
             if surah_num != 1 and ayah_num == 1:
                 basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
@@ -199,10 +185,10 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
                 "text": text_data,
                 "audio": audio_res["data"]["audio"],
                 "sajda": text_res["data"].get("sajda", False)
-            }, tafsir_res["data"]
-        return None, None
+            }
+        return None
     except Exception:
-        return None, None
+        return None
 
 def ensure_font_exists():
     font_path = "Amiri-Regular.ttf"
@@ -394,9 +380,9 @@ def main():
             st.session_state.current_ayah_num = selected_ayah_num
             st.rerun()
 
-    ayah_data, tafsir_data = get_ayah_data(selected_surah_num, selected_ayah_num, reciter_key)
+    ayah_data = get_ayah_data(selected_surah_num, selected_ayah_num, reciter_key)
     
-    if ayah_data and tafsir_data:
+    if ayah_data:
         # تلوين العلامات قبل العرض
         colored_text = colorize_marks(ayah_data["text"])
         
@@ -414,15 +400,12 @@ def main():
         
         st.markdown(f"""
         <div class="info-box">
-            <b>📌 علامات القراءة في الآية الحالية:</b><br>
+            <b>📌 التنبيهات:</b><br>
             <ul>
                 <li><b>السجود:</b> {sajda_text}</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
-        
-        st.markdown("### 📚 التفسير الميسر")
-        st.markdown(f'<div class="tafsir-box">{tafsir_data["text"]}</div>', unsafe_allow_html=True)
         
     st.markdown("---")
     
@@ -462,7 +445,7 @@ def main():
                     if selected_full_surah["number"] != 1 and i == 0 and text.startswith(basmalah):
                         text = text[len(basmalah):].strip()
                         
-                    # تلوين العلامات داخل المشغل الذكي أيضاً!
+                    # تلوين العلامات داخل المشغل الذكي
                     colored_text_js = colorize_marks(text)
                     js_ayahs.append({"text": colored_text_js, "audio": a["audio"], "num": a["numberInSurah"]})
                 
