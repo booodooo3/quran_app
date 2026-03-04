@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# تنسيق CSS مخصص لدعم اللغة العربية والتعديلات المطلوبة
+# تنسيق CSS مخصص
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;700&display=swap');
@@ -37,7 +37,7 @@ st.markdown("""
     
     .quran-text {
         font-family: 'Amiri', serif;
-        font-size: 34px;
+        font-size: 36px;
         color: #0d47a1;
         text-align: center;
         background-color: #f5f7fa;
@@ -71,7 +71,6 @@ st.markdown("""
         text-align: right;
     }
 
-    /* --- تلوين خانة الآية (العمود الثالث) وإيقاف الكيبورد --- */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
@@ -84,7 +83,6 @@ st.markdown("""
         font-size: 16px !important;
     }
     
-    /* --- تنسيق جدول العلامات في القائمة الجانبية --- */
     .signs-table {
         width: 100%;
         border-collapse: collapse;
@@ -131,6 +129,19 @@ RECITERS = {
     "ar.parhizgar": "القارئ شهريار برهيزقار"
 }
 
+# --- دالة تلوين العلامات القرآنية بالأحمر ---
+def colorize_marks(text):
+    # قائمة بجميع علامات الوقف والضبط في الرسم العثماني
+    marks = [
+        "ۖ", "ۗ", "ۘ", "ۙ", "ۚ", "ۛ", # علامات الوقف
+        "ۢ", "ۡ", "ۤ", "ٓ", "ۜ", "۟", "۠", # الإقلاب، السكون، المد، السكتة، الصفر المستدير والمستطيل
+        "۩", "۞" # السجدة ونصف الحزب
+    ]
+    for mark in marks:
+        # استبدال العلامة بنسخة ملونة بالأحمر عبر HTML
+        text = text.replace(mark, f"<span style='color:#d32f2f; font-weight:bold;'>{mark}</span>")
+    return text
+
 # دوال مساعدة
 @st.cache_data
 def get_surahs():
@@ -144,48 +155,54 @@ def get_surahs():
 
 @st.cache_data
 def get_surah_with_audio_array(surah_num, reciter_id):
-    """جلب السورة كاملة كآيات منفصلة مع روابط الصوت الخاص بها للتتبع الذكي"""
+    """جلب السورة كاملة بالرسم العثماني والصوت"""
     try:
-        res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/{reciter_id}").json()
-        if res['code'] == 200:
-            return res['data']['ayahs']
+        # جلب النص العثماني للحصول على العلامات بدقة
+        text_res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-uthmani").json()
+        # جلب الصوت للقارئ المختار
+        audio_res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/{reciter_id}").json()
+        
+        if text_res['code'] == 200 and audio_res['code'] == 200:
+            combined = []
+            text_ayahs = text_res['data']['ayahs']
+            audio_ayahs = audio_res['data']['ayahs']
+            for i in range(len(text_ayahs)):
+                combined.append({
+                    "text": text_ayahs[i]["text"],
+                    "audio": audio_ayahs[i]["audio"],
+                    "numberInSurah": text_ayahs[i]["numberInSurah"]
+                })
+            return combined
         return []
     except:
         return []
 
 def get_ayah_data(surah_num, ayah_num, reciter_id):
     try:
-        urls = [
-            f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}",
-            f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/ar.muyassar"
-        ]
+        # نستخدم quran-uthmani لضمان وجود العلامات
+        url_text = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/quran-uthmani"
+        url_audio = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}"
+        url_tafsir = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/ar.muyassar"
         
-        ayah_res = requests.get(urls[0]).json()
-        tafsir_res = requests.get(urls[1]).json()
+        text_res = requests.get(url_text).json()
+        audio_res = requests.get(url_audio).json()
+        tafsir_res = requests.get(url_tafsir).json()
         
-        if ayah_res["code"] == 200 and tafsir_res["code"] == 200:
-            data = ayah_res["data"]
+        if text_res["code"] == 200 and audio_res["code"] == 200 and tafsir_res["code"] == 200:
+            text_data = text_res["data"]["text"]
             if surah_num != 1 and ayah_num == 1:
                 basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
-                if data["text"].startswith(basmalah):
-                     data["text"] = data["text"][len(basmalah):].strip()
-            return data, tafsir_res["data"]
+                if text_data.startswith(basmalah):
+                     text_data = text_data[len(basmalah):].strip()
+            
+            return {
+                "text": text_data,
+                "audio": audio_res["data"]["audio"],
+                "sajda": text_res["data"].get("sajda", False)
+            }, tafsir_res["data"]
         return None, None
     except Exception:
         return None, None
-
-def analyze_marks(text):
-    marks = []
-    if "ۖ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۖ (صلے):</span> تُفِيدُ بِأَنَّ الْوَصْلَ أَوْلَى مَعَ جَوَازِ الْوَقْفِ")
-    if "ۗ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۗ (قلے):</span> تُفِيدُ بِأَنَّ الْوَقْفَ أَوْلَى")
-    if "ۘ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۘ (مـ):</span> تُفِيدُ لُزُومَ الْوَقْفِ")
-    if "ۙ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۙ (لا):</span> تُفِيدُ النَّهْيَ عَنِ الْوَقْفِ")
-    if "ۚ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۚ (ج):</span> تُفِيدُ جَوَازَ الْوَقْفِ")
-    if "ۛ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۛ (∴):</span> تُفِيدُ جَوَازَ الْوَقْفِ بِأَحَدِ الْمَوْضِعَيْنِ وَلَيْسَ فِي كِلَيْهِمَا")
-    if "ۢ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۢ (م):</span> لِلدَّلَالَةِ عَلَى وُجُودِ الْإِقْلَابِ")
-    if "ۡ" in text: marks.append("<span style='color:red; font-weight:bold;'>ۡ (حـ):</span> لِلدَّلَالَةِ عَلَى سُكُونِ الْحَرْفِ")
-    if "ۤ" in text or "ٓ" in text: marks.append("<span style='color:red; font-weight:bold;'>~ :</span> لِلدَّلَالَةِ عَلَى لُزُومِ الْمَدِّ الزَّائِدِ")
-    return marks
 
 def ensure_font_exists():
     font_path = "Amiri-Regular.ttf"
@@ -207,13 +224,13 @@ def to_arabic_numerals(n):
 @st.cache_data
 def get_full_surah_text(surah_num):
     try:
-        response = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-simple")
+        response = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-uthmani")
         if response.status_code == 200:
             data = response.json()["data"]
             ayahs = []
             if surah_num != 1 and len(data["ayahs"]) > 0:
                 first_ayah_text = data["ayahs"][0]['text']
-                basmalah = "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+                basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
                 if first_ayah_text.startswith(basmalah):
                     data["ayahs"][0]['text'] = first_ayah_text[len(basmalah):].strip()
 
@@ -294,7 +311,7 @@ def main():
             <tr><td class="sign-symbol">صلے</td><td>تُفِيدُ بِأَنَّ الْوَصْلَ أَوْلَى مَعَ جَوَازِ الْوَقْفِ</td></tr>
             <tr><td class="sign-symbol">قلے</td><td>تُفِيدُ بِأَنَّ الْوَقْفَ أَوْلَى</td></tr>
             <tr><td class="sign-symbol">ج</td><td>تُفِيدُ جَوَازَ الْوَقْفِ</td></tr>
-            <tr><td class="sign-symbol">∴ ∴</td><td>تُفِيدُ جَوَازَ الْوَقْفِ بِأَحَدِ الْمَوْضِعَيْنِ وَلَيْسَ فِي كِلَيْهِمَا</td></tr>
+            <tr><td class="sign-symbol">∴</td><td>تُفِيدُ جَوَازَ الْوَقْفِ بِأَحَدِ الْمَوْضِعَيْنِ وَلَيْسَ فِي كِلَيْهِمَا</td></tr>
             <tr><td class="sign-symbol">°</td><td>لِلدَّلَالَةِ عَلَى زِيَادَةِ الْحَرْفِ وَعَدَمِ النُّطْقِ بِهِ</td></tr>
             <tr><td class="sign-symbol">0</td><td>لِلدَّلَالَةِ عَلَى زِيَادَةِ الْحَرْفِ حِينَ الْوَصْلِ</td></tr>
             <tr><td class="sign-symbol">حـ</td><td>لِلدَّلَالَةِ عَلَى سُكُونِ الْحَرْفِ (رأس خاء بدون نقطة)</td></tr>
@@ -380,7 +397,10 @@ def main():
     ayah_data, tafsir_data = get_ayah_data(selected_surah_num, selected_ayah_num, reciter_key)
     
     if ayah_data and tafsir_data:
-        st.markdown(f'<div class="quran-text">{ayah_data["text"]}</div>', unsafe_allow_html=True)
+        # تلوين العلامات قبل العرض
+        colored_text = colorize_marks(ayah_data["text"])
+        
+        st.markdown(f'<div class="quran-text">{colored_text}</div>', unsafe_allow_html=True)
         
         st.markdown("### 🎧 تلاوة الآية")
         st.audio(ayah_data["audio"], format="audio/mp3")
@@ -391,9 +411,6 @@ def main():
                 sajda_text = "✅ <span style='color:red;'>يوجد سجدة تلاوة (واجبة)</span>" if ayah_data["sajda"].get("obligatory") else "✅ <span style='color:red;'>يوجد سجدة تلاوة (مستحبة)</span>"
             else:
                 sajda_text = "✅ <span style='color:red;'>يوجد سجدة تلاوة</span>"
-
-        marks = analyze_marks(ayah_data["text"])
-        marks_html = "".join([f"<li>{m}</li>" for m in marks]) if marks else "<li>لا توجد علامات وقف خاصة في هذه الآية.</li>"
         
         st.markdown(f"""
         <div class="info-box">
@@ -401,7 +418,6 @@ def main():
             <ul>
                 <li><b>السجود:</b> {sajda_text}</li>
             </ul>
-            <ul>{marks_html}</ul>
         </div>
         """, unsafe_allow_html=True)
         
@@ -439,20 +455,19 @@ def main():
             ayahs_audio_data = get_surah_with_audio_array(selected_full_surah["number"], reciter_key)
             
             if ayahs_audio_data:
-                # تجهيز البيانات لتمريرها إلى جافاسكريبت
                 js_ayahs = []
                 basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
                 for i, a in enumerate(ayahs_audio_data):
                     text = a["text"]
-                    # مسح البسملة من أول آية في العرض (باستثناء الفاتحة)
                     if selected_full_surah["number"] != 1 and i == 0 and text.startswith(basmalah):
                         text = text[len(basmalah):].strip()
-                    js_ayahs.append({"text": text, "audio": a["audio"], "num": a["numberInSurah"]})
+                        
+                    # تلوين العلامات داخل المشغل الذكي أيضاً!
+                    colored_text_js = colorize_marks(text)
+                    js_ayahs.append({"text": colored_text_js, "audio": a["audio"], "num": a["numberInSurah"]})
                 
-                # تحويل القائمة إلى نص JSON
                 js_data_string = json.dumps(js_ayahs)
                 
-                # كود HTML & JavaScript للمشغل الذكي
                 smart_player_html = f"""
                 <!DOCTYPE html>
                 <html dir="rtl" lang="ar">
@@ -467,8 +482,8 @@ def main():
                             border-radius: 10px; 
                         }}
                         .ayah {{ 
-                            font-size: 30px; 
-                            line-height: 2.2; 
+                            font-size: 34px; 
+                            line-height: 2.4; 
                             color: #0d47a1; 
                             transition: background-color 0.3s; 
                             cursor: pointer; 
@@ -542,7 +557,6 @@ def main():
                             }});
                             container.innerHTML = html;
                             
-                            // تمرير الشاشة تلقائياً للآية المظللة
                             const activeEl = document.getElementById(`ayah-${{currentIndex}}`);
                             if(activeEl) {{
                                 activeEl.scrollIntoView({{behavior: 'smooth', block: 'center'}});
@@ -604,22 +618,20 @@ def main():
                                 playBtn.innerText = "▶ إعادة التشغيل";
                                 statusText.innerText = "✅ انتهت السورة";
                                 currentIndex = 0;
-                                renderText(); // لإزالة التظليل
+                                renderText(); 
                             }}
                         }};
                         
                         audio.onwaiting = function() {{ statusText.innerText = "⏳ جاري التحميل..."; }};
                         audio.onerror = function() {{ statusText.innerText = "❌ خطأ في تحميل الصوت. تأكد من الإنترنت."; }};
 
-                        // تشغيل مبدئي لرسم النص
                         renderText();
                     </script>
                 </body>
                 </html>
                 """
                 
-                # حقن كود الـ HTML والمشغل داخل Streamlit
-                components.html(smart_player_html, height=650, scrolling=True)
+                components.html(smart_player_html, height=750, scrolling=True)
 
     st.markdown("---")
     st.markdown("### 📄 تحميل السورة (PDF)")
