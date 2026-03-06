@@ -62,7 +62,6 @@ st.markdown("""
         font-size: 16px;
     }
 
-    /* تلوين خانة الآية ومنع الكيبورد */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
@@ -134,6 +133,115 @@ arabic_numbers_map = {
     "عشر": 10, "عشرة": 10, "عاشرة": 10, "العاشرة": 10
 }
 
+# --- إعداد أداة البحث الصوتي الاحترافية ---
+def setup_voice_component():
+    """ينشئ مكون Streamlit مخصص لا يتأثر بالهواتف ولا يحدّث الصفحة"""
+    if not os.path.exists("voice_component"):
+        os.makedirs("voice_component")
+    
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+        <script>
+            function sendMessageToStreamlit(type, data) {
+                window.parent.postMessage({
+                    isStreamlitMessage: true,
+                    type: type,
+                    ...data
+                }, "*");
+            }
+            function init() {
+                sendMessageToStreamlit("streamlit:componentReady", {apiVersion: 1});
+                sendMessageToStreamlit("streamlit:setFrameHeight", {height: 130});
+            }
+            function returnResult(transcript) {
+                // نرسل النص مع توقيت زمني لكي يعرف بايثون أن هناك بحثاً جديداً
+                sendMessageToStreamlit("streamlit:setComponentValue", {value: {text: transcript, time: Date.now()}});
+            }
+            window.addEventListener("message", function(event) {
+                if (event.data.type === "streamlit:render") {
+                    sendMessageToStreamlit("streamlit:setFrameHeight", {height: 130});
+                }
+            });
+            window.onload = init;
+        </script>
+        <style>
+            .mic-btn {
+                background-color: #fbc02d; border: none; border-radius: 50%;
+                width: 70px; height: 70px; font-size: 30px; cursor: pointer;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.3s;
+                display: flex; align-items: center; justify-content: center; margin: 0 auto;
+            }
+            .mic-btn:hover { transform: scale(1.1); background-color: #f9a825; }
+            .mic-btn.recording {
+                background-color: #d32f2f; animation: pulse 1.5s infinite;
+            }
+            @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.7); }
+                70% { box-shadow: 0 0 0 20px rgba(211, 47, 47, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0); }
+            }
+            #statusText {
+                text-align: center; font-family: 'Cairo', sans-serif;
+                margin-top: 10px; font-size: 15px; color: #0d47a1; font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div style="text-align: center;">
+            <button id="micBtn" class="mic-btn" onclick="startDictation()">🎙️</button>
+            <div id="statusText">جاهز للاستماع...</div>
+        </div>
+        <script>
+            function startDictation() {
+                var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    var recognition = new SpeechRecognition();
+                    var micBtn = document.getElementById('micBtn');
+                    var statusText = document.getElementById('statusText');
+                    
+                    recognition.continuous = false;
+                    recognition.interimResults = false;
+                    recognition.lang = "ar-SA";
+                    
+                    recognition.onstart = function() {
+                        micBtn.classList.add('recording');
+                        statusText.innerText = "جاري الاستماع... (تحدث الآن)";
+                    };
+                    recognition.onresult = function(e) {
+                        micBtn.classList.remove('recording');
+                        var transcript = e.results[0][0].transcript;
+                        statusText.innerText = "تم الالتقاط: " + transcript;
+                        returnResult(transcript);
+                    };
+                    recognition.onerror = function(e) {
+                        micBtn.classList.remove('recording');
+                        statusText.innerText = "حدث خطأ أو لم يتم التعرف على الصوت.";
+                    };
+                    recognition.onend = function() {
+                        micBtn.classList.remove('recording');
+                    };
+                    recognition.start();
+                } else {
+                    document.getElementById('statusText').innerText = "متصفحك لا يدعم المايكروفون.";
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    
+    index_path = os.path.join("voice_component", "index.html")
+    with open(index_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+        
+    return components.declare_component("voice_cmp", path="voice_component")
+
+voice_component = setup_voice_component()
+
 # --- دوال البحث الصوتي الذكي ---
 def normalize_text(text):
     if not text:
@@ -148,7 +256,6 @@ def parse_voice_query(query, surah_list):
     surah_num = None
     ayah_num = 1
     
-    # 1. استخراج رقم الآية
     query_digits = query.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4').replace('٥','5').replace('٦','6').replace('٧','7').replace('٨','8').replace('٩','9')
     numbers = re.findall(r'\d+', query_digits)
     
@@ -160,12 +267,10 @@ def parse_voice_query(query, surah_list):
                 ayah_num = val
                 break
                 
-    # 2. استخراج اسم السورة (نبحث عن السور الأطول اسماً أولاً لتجنب الأخطاء)
     surahs_sorted = sorted(surah_list, key=lambda x: len(x['name']), reverse=True)
     for s in surahs_sorted:
         s_name_norm = normalize_text(s['name'])
         if s_name_norm and s_name_norm in norm_query:
-            # التحقق من السور ذات الأسماء القصيرة جداً (مثل: ص، ق، طه)
             if len(s_name_norm) <= 2:
                 if f" {s_name_norm} " in f" {norm_query} ":
                     surah_num = s['number']
@@ -346,116 +451,28 @@ def main():
         st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
         return
 
-    # --- معالجة نتائج البحث الصوتي ---
-    if "voice_query" in st.query_params:
-        voice_query = st.query_params["voice_query"]
-        s_num, a_num = parse_voice_query(voice_query, surahs)
-        
-        if s_num:
-            st.session_state.current_surah_num = s_num
-            max_a = next((s['numberOfAyahs'] for s in surahs if s['number'] == s_num), 286)
-            st.session_state.current_ayah_num = min(a_num, max_a)
-        
-        # مسح المتغير حتى لا يعلق المتصفح في حلقة تحديث
-        del st.query_params["voice_query"]
-
-    # --- واجهة البحث الصوتي ---
+    # --- واجهة البحث الصوتي ومعالجة البيانات بأمان ---
     st.markdown("<h4 style='text-align: center; color: #00695c;'>🎙️ البحث الصوتي السريع</h4>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; font-size: 14px; color: #555;'>اضغط على المايكروفون بالأسفل وقُل: <b>'سورة الكهف الآية 10'</b></p>", unsafe_allow_html=True)
     
-    voice_html = """
-    <!DOCTYPE html>
-    <html dir="rtl" lang="ar">
-    <head>
-        <style>
-            .mic-btn {
-                background-color: #fbc02d;
-                border: none;
-                border-radius: 50%;
-                width: 70px;
-                height: 70px;
-                font-size: 30px;
-                cursor: pointer;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-                transition: 0.3s;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0 auto;
-            }
-            .mic-btn:hover {
-                transform: scale(1.1);
-                background-color: #f9a825;
-            }
-            .mic-btn.recording {
-                background-color: #d32f2f;
-                animation: pulse 1.5s infinite;
-            }
-            @keyframes pulse {
-                0% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.7); }
-                70% { box-shadow: 0 0 0 20px rgba(211, 47, 47, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0); }
-            }
-            #statusText {
-                text-align: center;
-                font-family: 'Cairo', sans-serif;
-                margin-top: 10px;
-                font-size: 15px;
-                color: #0d47a1;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <div style="text-align: center;">
-            <button id="micBtn" class="mic-btn" onclick="startDictation()">🎙️</button>
-            <div id="statusText">جاهز للاستماع...</div>
-        </div>
+    # التقاط النتيجة من الـ Component
+    voice_data = voice_component(key="voice_search")
+    
+    if voice_data and isinstance(voice_data, dict):
+        transcript = voice_data.get("text", "")
+        time_val = voice_data.get("time", 0)
+        
+        # التأكد من أن هذا البحث جديد ولم يتم تنفيذه مسبقاً
+        if transcript and time_val != st.session_state.get("last_voice_time", 0):
+            st.session_state.last_voice_time = time_val
+            s_num, a_num = parse_voice_query(transcript, surahs)
+            
+            if s_num:
+                st.session_state.current_surah_num = s_num
+                max_a = next((s['numberOfAyahs'] for s in surahs if s['number'] == s_num), 286)
+                st.session_state.current_ayah_num = min(a_num, max_a)
+                st.rerun() # تحديث الصفحة للانتقال للآية المطلوبة بسلاسة
 
-        <script>
-            function startDictation() {
-                if (window.hasOwnProperty('webkitSpeechRecognition')) {
-                    var recognition = new webkitSpeechRecognition();
-                    var micBtn = document.getElementById('micBtn');
-                    var statusText = document.getElementById('statusText');
-                    
-                    recognition.continuous = false;
-                    recognition.interimResults = false;
-                    recognition.lang = "ar-SA";
-                    
-                    recognition.onstart = function() {
-                        micBtn.classList.add('recording');
-                        statusText.innerText = "جاري الاستماع... (تحدث الآن)";
-                    };
-
-                    recognition.onresult = function(e) {
-                        micBtn.classList.remove('recording');
-                        var transcript = e.results[0][0].transcript;
-                        statusText.innerText = "تم الالتقاط: " + transcript;
-                        
-                        // إرسال النص إلى بايثون عبر رابط الصفحة
-                        window.parent.location.search = "?voice_query=" + encodeURIComponent(transcript);
-                    };
-
-                    recognition.onerror = function(e) {
-                        micBtn.classList.remove('recording');
-                        statusText.innerText = "حدث خطأ. تأكد من إعطاء صلاحية المايكروفون للمتصفح.";
-                    };
-                    
-                    recognition.onend = function() {
-                        micBtn.classList.remove('recording');
-                    };
-
-                    recognition.start();
-                } else {
-                    document.getElementById('statusText').innerText = "متصفحك لا يدعم هذه الميزة. يرجى استخدام متصفح Chrome أو Safari.";
-                }
-            }
-        </script>
-    </body>
-    </html>
-    """
-    components.html(voice_html, height=140)
     st.markdown("---")
 
     with st.sidebar:
@@ -689,10 +706,6 @@ def main():
                         let audio = new Audio();
                         let isPlaying = false;
 
-                        const container = document.getElementById('quran-container');
-                        const playBtn = document.getElementById('playBtn');
-                        const statusText = document.getElementById('status');
-
                         function toArabicNumerals(num) {{
                             const digits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
                             return num.toString().replace(/[0-9]/g, w => digits[+w]);
@@ -773,6 +786,10 @@ def main():
                         audio.onwaiting = function() {{ statusText.innerText = "⏳ جاري التحميل..."; }};
                         audio.onerror = function() {{ statusText.innerText = "❌ خطأ في تحميل الصوت. تأكد من الإنترنت."; }};
 
+                        const container = document.getElementById('quran-container');
+                        const playBtn = document.getElementById('playBtn');
+                        const statusText = document.getElementById('status');
+                        
                         renderText();
                     </script>
                 </body>
