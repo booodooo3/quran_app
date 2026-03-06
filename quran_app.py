@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import requests
 import os
 import io
@@ -12,6 +11,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 import arabic_reshaper
 from bidi.algorithm import get_display
+import streamlit.components.v1 as components
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -32,8 +32,8 @@ st.markdown("""
         font-family: 'Cairo', sans-serif;
     }
     
-    p, div, span, h1, h2, h3, h4, h5, h6 {
-        font-family: 'Cairo', sans-serif;
+    p, div, span, h1, h2, h3, h4, h5, h6, label {
+        font-family: 'Cairo', sans-serif !important;
     }
     
     .stSelectbox, .stNumberInput {
@@ -62,6 +62,7 @@ st.markdown("""
         font-size: 16px;
     }
 
+    /* تلوين خانة الآية ومنع الكيبورد عند اختيار الآية يدوياً */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
@@ -92,6 +93,14 @@ st.markdown("""
         font-size: 26px;
         text-align: center;
         width: 40px;
+    }
+    
+    /* تنسيق صندوق البحث */
+    [data-testid="stTextInput"] input {
+        font-size: 18px !important;
+        border: 2px solid #00695c !important;
+        border-radius: 8px !important;
+        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -133,116 +142,7 @@ arabic_numbers_map = {
     "عشر": 10, "عشرة": 10, "عاشرة": 10, "العاشرة": 10
 }
 
-# --- إعداد أداة البحث الصوتي الاحترافية ---
-def setup_voice_component():
-    """ينشئ مكون Streamlit مخصص لا يتأثر بالهواتف ولا يحدّث الصفحة"""
-    if not os.path.exists("voice_component"):
-        os.makedirs("voice_component")
-    
-    html_content = """
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
-        <script>
-            function sendMessageToStreamlit(type, data) {
-                window.parent.postMessage({
-                    isStreamlitMessage: true,
-                    type: type,
-                    ...data
-                }, "*");
-            }
-            function init() {
-                sendMessageToStreamlit("streamlit:componentReady", {apiVersion: 1});
-                sendMessageToStreamlit("streamlit:setFrameHeight", {height: 130});
-            }
-            function returnResult(transcript) {
-                // نرسل النص مع توقيت زمني لكي يعرف بايثون أن هناك بحثاً جديداً
-                sendMessageToStreamlit("streamlit:setComponentValue", {value: {text: transcript, time: Date.now()}});
-            }
-            window.addEventListener("message", function(event) {
-                if (event.data.type === "streamlit:render") {
-                    sendMessageToStreamlit("streamlit:setFrameHeight", {height: 130});
-                }
-            });
-            window.onload = init;
-        </script>
-        <style>
-            .mic-btn {
-                background-color: #fbc02d; border: none; border-radius: 50%;
-                width: 70px; height: 70px; font-size: 30px; cursor: pointer;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.15); transition: 0.3s;
-                display: flex; align-items: center; justify-content: center; margin: 0 auto;
-            }
-            .mic-btn:hover { transform: scale(1.1); background-color: #f9a825; }
-            .mic-btn.recording {
-                background-color: #d32f2f; animation: pulse 1.5s infinite;
-            }
-            @keyframes pulse {
-                0% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.7); }
-                70% { box-shadow: 0 0 0 20px rgba(211, 47, 47, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0); }
-            }
-            #statusText {
-                text-align: center; font-family: 'Cairo', sans-serif;
-                margin-top: 10px; font-size: 15px; color: #0d47a1; font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <div style="text-align: center;">
-            <button id="micBtn" class="mic-btn" onclick="startDictation()">🎙️</button>
-            <div id="statusText">جاهز للاستماع...</div>
-        </div>
-        <script>
-            function startDictation() {
-                var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (SpeechRecognition) {
-                    var recognition = new SpeechRecognition();
-                    var micBtn = document.getElementById('micBtn');
-                    var statusText = document.getElementById('statusText');
-                    
-                    recognition.continuous = false;
-                    recognition.interimResults = false;
-                    recognition.lang = "ar-SA";
-                    
-                    recognition.onstart = function() {
-                        micBtn.classList.add('recording');
-                        statusText.innerText = "جاري الاستماع... (تحدث الآن)";
-                    };
-                    recognition.onresult = function(e) {
-                        micBtn.classList.remove('recording');
-                        var transcript = e.results[0][0].transcript;
-                        statusText.innerText = "تم الالتقاط: " + transcript;
-                        returnResult(transcript);
-                    };
-                    recognition.onerror = function(e) {
-                        micBtn.classList.remove('recording');
-                        statusText.innerText = "حدث خطأ أو لم يتم التعرف على الصوت.";
-                    };
-                    recognition.onend = function() {
-                        micBtn.classList.remove('recording');
-                    };
-                    recognition.start();
-                } else {
-                    document.getElementById('statusText').innerText = "متصفحك لا يدعم المايكروفون.";
-                }
-            }
-        </script>
-    </body>
-    </html>
-    """
-    
-    index_path = os.path.join("voice_component", "index.html")
-    with open(index_path, "w", encoding="utf-8") as f:
-        f.write(html_content)
-        
-    return components.declare_component("voice_cmp", path="voice_component")
-
-voice_component = setup_voice_component()
-
-# --- دوال البحث الصوتي الذكي ---
+# --- دوال البحث الذكي ---
 def normalize_text(text):
     if not text:
         return ""
@@ -451,28 +351,25 @@ def main():
         st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
         return
 
-    # --- واجهة البحث الصوتي ومعالجة البيانات بأمان ---
-    st.markdown("<h4 style='text-align: center; color: #00695c;'>🎙️ البحث الصوتي السريع</h4>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; font-size: 14px; color: #555;'>اضغط على المايكروفون بالأسفل وقُل: <b>'سورة الكهف الآية 10'</b></p>", unsafe_allow_html=True)
-    
-    # التقاط النتيجة من الـ Component
-    voice_data = voice_component(key="voice_search")
-    
-    if voice_data and isinstance(voice_data, dict):
-        transcript = voice_data.get("text", "")
-        time_val = voice_data.get("time", 0)
-        
-        # التأكد من أن هذا البحث جديد ولم يتم تنفيذه مسبقاً
-        if transcript and time_val != st.session_state.get("last_voice_time", 0):
-            st.session_state.last_voice_time = time_val
-            s_num, a_num = parse_voice_query(transcript, surahs)
-            
+    # --- البحث الذكي (باستخدام مايكروفون الكيبورد) ---
+    def perform_search():
+        query = st.session_state.search_input
+        if query:
+            s_num, a_num = parse_voice_query(query, surahs)
             if s_num:
                 st.session_state.current_surah_num = s_num
                 max_a = next((s['numberOfAyahs'] for s in surahs if s['number'] == s_num), 286)
                 st.session_state.current_ayah_num = min(a_num, max_a)
-                st.rerun() # تحديث الصفحة للانتقال للآية المطلوبة بسلاسة
+            # تفريغ الخانة بعد البحث لتكون جاهزة لعملية أخرى
+            st.session_state.search_input = ""
 
+    st.markdown("<h4 style='text-align: center; color: #00695c;'>🔍 البحث السريع عن آية</h4>", unsafe_allow_html=True)
+    st.text_input(
+        "اضغط هنا واستخدم (مايكروفون كيبورد جوالك 🎙️) وقُل: سورة الكهف الآية 10", 
+        key="search_input", 
+        on_change=perform_search,
+        placeholder="مثال: البقرة 5..."
+    )
     st.markdown("---")
 
     with st.sidebar:
@@ -565,7 +462,6 @@ def main():
     ayah_data = get_ayah_data(selected_surah_num, selected_ayah_num, reciter_key)
     
     if ayah_data:
-        # تلوين العلامات قبل العرض
         colored_text = colorize_marks(ayah_data["text"])
         
         st.markdown(f'<div class="quran-text">{colored_text}</div>', unsafe_allow_html=True)
@@ -627,7 +523,6 @@ def main():
                     if selected_full_surah["number"] != 1 and i == 0 and text.startswith(basmalah):
                         text = text[len(basmalah):].strip()
                         
-                    # تلوين العلامات داخل المشغل الذكي
                     colored_text_js = colorize_marks(text)
                     js_ayahs.append({"text": colored_text_js, "audio": a["audio"], "num": a["numberInSurah"]})
                 
@@ -786,10 +681,6 @@ def main():
                         audio.onwaiting = function() {{ statusText.innerText = "⏳ جاري التحميل..."; }};
                         audio.onerror = function() {{ statusText.innerText = "❌ خطأ في تحميل الصوت. تأكد من الإنترنت."; }};
 
-                        const container = document.getElementById('quran-container');
-                        const playBtn = document.getElementById('playBtn');
-                        const statusText = document.getElementById('status');
-                        
                         renderText();
                     </script>
                 </body>
