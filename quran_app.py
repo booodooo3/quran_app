@@ -4,6 +4,7 @@ import requests
 import os
 import io
 import json
+import re
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -25,7 +26,6 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;700&display=swap');
     
-    /* تطبيق الاتجاه العربي بشكل آمن لا يكسر تصميم Streamlit في الجوال */
     .block-container, [data-testid="stSidebarContent"] {
         direction: rtl;
         text-align: right;
@@ -62,7 +62,7 @@ st.markdown("""
         font-size: 16px;
     }
 
-    /* --- تلوين خانة الآية (العمود الثالث) وإيقاف الكيبورد --- */
+    /* تلوين خانة الآية ومنع الكيبورد */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
@@ -75,7 +75,6 @@ st.markdown("""
         font-size: 16px !important;
     }
     
-    /* --- تنسيق جدول العلامات في القائمة الجانبية --- */
     .signs-table {
         width: 100%;
         border-collapse: collapse;
@@ -122,6 +121,61 @@ RECITERS = {
     "ar.parhizgar": "القارئ شهريار برهيزقار"
 }
 
+arabic_numbers_map = {
+    "واحد": 1, "واحدة": 1, "اولى": 1, "الاولى": 1,
+    "اثنين": 2, "اثنان": 2, "ثانية": 2, "الثانية": 2,
+    "ثلاث": 3, "ثلاثة": 3, "ثالثة": 3, "الثالثة": 3,
+    "اربع": 4, "اربعة": 4, "رابعة": 4, "الرابعة": 4,
+    "خمس": 5, "خمسة": 5, "خامسة": 5, "الخامسة": 5,
+    "ست": 6, "ستة": 6, "سادسة": 6, "السادسة": 6,
+    "سبع": 7, "سبعة": 7, "سابعة": 7, "السابعة": 7,
+    "ثمان": 8, "ثمانية": 8, "ثامنة": 8, "الثامنة": 8,
+    "تسع": 9, "تسعة": 9, "تاسعة": 9, "التاسعة": 9,
+    "عشر": 10, "عشرة": 10, "عاشرة": 10, "العاشرة": 10
+}
+
+# --- دوال البحث الصوتي الذكي ---
+def normalize_text(text):
+    if not text:
+        return ""
+    text = text.replace("سورة", "").replace("سوره", "")
+    text = text.replace("الآية", "").replace("الايه", "").replace("اية", "").replace("آية", "")
+    text = text.replace("ة", "ه").replace("أ", "ا").replace("إ", "ا").replace("آ", "ا")
+    return text.strip()
+
+def parse_voice_query(query, surah_list):
+    norm_query = normalize_text(query)
+    surah_num = None
+    ayah_num = 1
+    
+    # 1. استخراج رقم الآية
+    query_digits = query.replace('٠','0').replace('١','1').replace('٢','2').replace('٣','3').replace('٤','4').replace('٥','5').replace('٦','6').replace('٧','7').replace('٨','8').replace('٩','9')
+    numbers = re.findall(r'\d+', query_digits)
+    
+    if numbers:
+        ayah_num = int(numbers[0])
+    else:
+        for word, val in arabic_numbers_map.items():
+            if word in query:
+                ayah_num = val
+                break
+                
+    # 2. استخراج اسم السورة (نبحث عن السور الأطول اسماً أولاً لتجنب الأخطاء)
+    surahs_sorted = sorted(surah_list, key=lambda x: len(x['name']), reverse=True)
+    for s in surahs_sorted:
+        s_name_norm = normalize_text(s['name'])
+        if s_name_norm and s_name_norm in norm_query:
+            # التحقق من السور ذات الأسماء القصيرة جداً (مثل: ص، ق، طه)
+            if len(s_name_norm) <= 2:
+                if f" {s_name_norm} " in f" {norm_query} ":
+                    surah_num = s['number']
+                    break
+            else:
+                surah_num = s['number']
+                break
+                
+    return surah_num, ayah_num
+
 # --- دالة تلوين العلامات القرآنية بالأحمر ---
 def colorize_marks(text):
     marks = [
@@ -166,7 +220,6 @@ def get_surah_with_audio_array(surah_num, reciter_id):
         return []
 
 def get_ayah_data(surah_num, ayah_num, reciter_id):
-    """جلب الآية بدون التفسير الميسر"""
     try:
         url_text = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/quran-uthmani"
         url_audio = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}"
@@ -288,6 +341,123 @@ def create_pdf(surah_name, surah_text):
 def main():
     st.markdown("<h1 style='text-align: center;'>🕌 المصحف المعلم</h1>", unsafe_allow_html=True)
 
+    surahs = get_surahs()
+    if not surahs:
+        st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
+        return
+
+    # --- معالجة نتائج البحث الصوتي ---
+    if "voice_query" in st.query_params:
+        voice_query = st.query_params["voice_query"]
+        s_num, a_num = parse_voice_query(voice_query, surahs)
+        
+        if s_num:
+            st.session_state.current_surah_num = s_num
+            max_a = next((s['numberOfAyahs'] for s in surahs if s['number'] == s_num), 286)
+            st.session_state.current_ayah_num = min(a_num, max_a)
+        
+        # مسح المتغير حتى لا يعلق المتصفح في حلقة تحديث
+        del st.query_params["voice_query"]
+
+    # --- واجهة البحث الصوتي ---
+    st.markdown("<h4 style='text-align: center; color: #00695c;'>🎙️ البحث الصوتي السريع</h4>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; font-size: 14px; color: #555;'>اضغط على المايكروفون بالأسفل وقُل: <b>'سورة الكهف الآية 10'</b></p>", unsafe_allow_html=True)
+    
+    voice_html = """
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+        <style>
+            .mic-btn {
+                background-color: #fbc02d;
+                border: none;
+                border-radius: 50%;
+                width: 70px;
+                height: 70px;
+                font-size: 30px;
+                cursor: pointer;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+                transition: 0.3s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto;
+            }
+            .mic-btn:hover {
+                transform: scale(1.1);
+                background-color: #f9a825;
+            }
+            .mic-btn.recording {
+                background-color: #d32f2f;
+                animation: pulse 1.5s infinite;
+            }
+            @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0.7); }
+                70% { box-shadow: 0 0 0 20px rgba(211, 47, 47, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(211, 47, 47, 0); }
+            }
+            #statusText {
+                text-align: center;
+                font-family: 'Cairo', sans-serif;
+                margin-top: 10px;
+                font-size: 15px;
+                color: #0d47a1;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div style="text-align: center;">
+            <button id="micBtn" class="mic-btn" onclick="startDictation()">🎙️</button>
+            <div id="statusText">جاهز للاستماع...</div>
+        </div>
+
+        <script>
+            function startDictation() {
+                if (window.hasOwnProperty('webkitSpeechRecognition')) {
+                    var recognition = new webkitSpeechRecognition();
+                    var micBtn = document.getElementById('micBtn');
+                    var statusText = document.getElementById('statusText');
+                    
+                    recognition.continuous = false;
+                    recognition.interimResults = false;
+                    recognition.lang = "ar-SA";
+                    
+                    recognition.onstart = function() {
+                        micBtn.classList.add('recording');
+                        statusText.innerText = "جاري الاستماع... (تحدث الآن)";
+                    };
+
+                    recognition.onresult = function(e) {
+                        micBtn.classList.remove('recording');
+                        var transcript = e.results[0][0].transcript;
+                        statusText.innerText = "تم الالتقاط: " + transcript;
+                        
+                        // إرسال النص إلى بايثون عبر رابط الصفحة
+                        window.parent.location.search = "?voice_query=" + encodeURIComponent(transcript);
+                    };
+
+                    recognition.onerror = function(e) {
+                        micBtn.classList.remove('recording');
+                        statusText.innerText = "حدث خطأ. تأكد من إعطاء صلاحية المايكروفون للمتصفح.";
+                    };
+                    
+                    recognition.onend = function() {
+                        micBtn.classList.remove('recording');
+                    };
+
+                    recognition.start();
+                } else {
+                    document.getElementById('statusText').innerText = "متصفحك لا يدعم هذه الميزة. يرجى استخدام متصفح Chrome أو Safari.";
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
+    components.html(voice_html, height=140)
+    st.markdown("---")
+
     with st.sidebar:
         st.header("📖 علامات الوقف ومصطلحات الضبط")
         st.markdown("""
@@ -312,11 +482,6 @@ def main():
             <tr><td class="sign-symbol">۝</td><td>لِلدَّلَالَةِ عَلَى نِهَايَةِ الْآيَةِ وَرَقْمِهَا</td></tr>
         </table>
         """, unsafe_allow_html=True)
-
-    surahs = get_surahs()
-    if not surahs:
-        st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
-        return
 
     current_surah_num = st.session_state.get('current_surah_num', 1)
     current_surah = next((s for s in surahs if s["number"] == current_surah_num), surahs[0])
@@ -650,7 +815,7 @@ def main():
     st.markdown(
         """
         <div style='text-align: center; color: #666; margin-top: 20px;'>
-            © 2026 Developed by boood0003<br>
+            © 2025 Developed by boood0003<br>
             <a href="https://analyzer-a.com" target="_blank" style="color: #0d47a1; text-decoration: none;">https://analyzer-a.com</a>
         </div>
         """,
