@@ -1,5 +1,6 @@
 streamlit
 requests
-reportlab
 arabic-reshaper
 python-bidi
+reportlab
+SpeechRecognition

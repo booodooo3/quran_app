@@ -4,6 +4,7 @@ import os
 import io
 import json
 import re
+import speech_recognition as sr
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -11,7 +12,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 import arabic_reshaper
 from bidi.algorithm import get_display
-import streamlit.components.v1 as components
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -62,7 +62,7 @@ st.markdown("""
         font-size: 16px;
     }
 
-    /* تلوين خانة الآية ومنع الكيبورد عند اختيار الآية يدوياً */
+    /* تلوين خانة الآية ومنع الكيبورد */
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:nth-child(3) div[data-testid="stSelectbox"] div[data-baseweb="select"] > div:first-child {
         background-color: #FFF9C4 !important; 
         border: 2px solid #FBC02D !important;
@@ -93,14 +93,6 @@ st.markdown("""
         font-size: 26px;
         text-align: center;
         width: 40px;
-    }
-    
-    /* تنسيق صندوق البحث */
-    [data-testid="stTextInput"] input {
-        font-size: 18px !important;
-        border: 2px solid #00695c !important;
-        border-radius: 8px !important;
-        text-align: center;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -142,7 +134,7 @@ arabic_numbers_map = {
     "عشر": 10, "عشرة": 10, "عاشرة": 10, "العاشرة": 10
 }
 
-# --- دوال البحث الذكي ---
+# --- دوال البحث الصوتي بالذكاء الاصطناعي ---
 def normalize_text(text):
     if not text:
         return ""
@@ -181,13 +173,8 @@ def parse_voice_query(query, surah_list):
                 
     return surah_num, ayah_num
 
-# --- دالة تلوين العلامات القرآنية بالأحمر ---
 def colorize_marks(text):
-    marks = [
-        "ۖ", "ۗ", "ۘ", "ۙ", "ۚ", "ۛ", 
-        "ۢ", "ۡ", "ۤ", "ٓ", "ۜ", "۟", "۠", 
-        "۩", "۞" 
-    ]
+    marks = ["ۖ", "ۗ", "ۘ", "ۙ", "ۚ", "ۛ", "ۢ", "ۡ", "ۤ", "ٓ", "ۜ", "۟", "۠", "۩", "۞"]
     for mark in marks:
         text = text.replace(mark, f"<span style='color:#d32f2f; font-weight:bold;'>{mark}</span>")
     return text
@@ -351,25 +338,40 @@ def main():
         st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
         return
 
-    # --- البحث الذكي (باستخدام مايكروفون الكيبورد) ---
-    def perform_search():
-        query = st.session_state.search_input
-        if query:
-            s_num, a_num = parse_voice_query(query, surahs)
-            if s_num:
-                st.session_state.current_surah_num = s_num
-                max_a = next((s['numberOfAyahs'] for s in surahs if s['number'] == s_num), 286)
-                st.session_state.current_ayah_num = min(a_num, max_a)
-            # تفريغ الخانة بعد البحث لتكون جاهزة لعملية أخرى
-            st.session_state.search_input = ""
+    # ==========================================
+    # مسجل الصوت الرسمي (يعمل على الجوال 100%)
+    # ==========================================
+    st.markdown("<h4 style='text-align: center; color: #00695c;'>🎙️ البحث بصوتك (مثال: البقرة الآية 10)</h4>", unsafe_allow_html=True)
+    
+    # هذه الميزة تستدعي المايكروفون بشكل شرعي وقانوني في المتصفح
+    audio_bytes = st.audio_input("اضغط على المايكروفون وتحدث...", key="voice_recorder")
+    
+    if audio_bytes:
+        with st.spinner("جاري تحليل صوتك عبر الذكاء الاصطناعي..."):
+            r = sr.Recognizer()
+            try:
+                # قراءة الملف الصوتي الذي تم تسجيله
+                with sr.AudioFile(audio_bytes) as source:
+                    audio_data = r.record(source)
+                
+                # إرسال الصوت لسيرفرات جوجل لتحويله لنص عربي
+                transcript = r.recognize_google(audio_data, language="ar-SA")
+                st.success(f"سمعتك تقول: {transcript}")
+                
+                # تحليل النص والانتقال للسورة
+                s_num, a_num = parse_voice_query(transcript, surahs)
+                if s_num:
+                    st.session_state.current_surah_num = s_num
+                    max_a = next((s['numberOfAyahs'] for s in surahs if s['number'] == s_num), 286)
+                    st.session_state.current_ayah_num = min(a_num, max_a)
+                else:
+                    st.warning("عذراً، لم أتمكن من معرفة السورة من كلامك.")
+                    
+            except sr.UnknownValueError:
+                st.error("لم أتمكن من سماعك بوضوح، حاول التحدث بصوت أعلى.")
+            except sr.RequestError:
+                st.error("حدث خطأ في الاتصال بخدمة تحليل الصوت.")
 
-    st.markdown("<h4 style='text-align: center; color: #00695c;'>🔍 البحث السريع عن آية</h4>", unsafe_allow_html=True)
-    st.text_input(
-        "اضغط هنا واستخدم (مايكروفون كيبورد جوالك 🎙️) وقُل: سورة الكهف الآية 10", 
-        key="search_input", 
-        on_change=perform_search,
-        placeholder="مثال: البقرة 5..."
-    )
     st.markdown("---")
 
     with st.sidebar:
@@ -487,9 +489,6 @@ def main():
         
     st.markdown("---")
     
-    # ==========================================
-    # قسم التتبع الصوتي الذكي (Audio-Text Sync)
-    # ==========================================
     st.markdown("### 📼 السورة كاملة (مع التتبع الصوتي الذكي 🟡)")
     st.info("اضغط على زر التشغيل لبدء التلاوة، وسيتم تظليل الآية المقروءة باللون الأصفر. يمكنك الضغط على أي آية للانتقال إليها مباشرة.")
     
