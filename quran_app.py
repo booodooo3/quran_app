@@ -144,9 +144,12 @@ SURAH_REVELATION_ORDER = {surah: i + 1 for i, surah in enumerate(REVELATION_ORDE
 
 RECITERS = {
     "ar.minshawi": "الشيخ محمد صديق المنشاوي",
+    "minshawi_mujawwad": "الشيخ محمد صديق المنشاوي ٢ | نهاوند",
     "ar.husary": "الشيخ محمود خليل الحصري",
     "ar.parhizgar": "القارئ شهريار برهيزقار"
 }
+
+MINSHAWI_MUJAWWAD_AUDIO_URL = "https://www.everyayah.com/data/Minshawy_Mujawwad_64kbps"
 
 # --- دالة تلوين العلامات القرآنية بالأحمر ---
 def colorize_marks(text):
@@ -170,24 +173,40 @@ def get_surahs():
     except:
         return []
 
+def get_minshawi_mujawwad_audio_url(surah_num, ayah_num):
+    return f"{MINSHAWI_MUJAWWAD_AUDIO_URL}/{surah_num:03d}{ayah_num:03d}.mp3"
+
 @st.cache_data
 def get_surah_with_audio_array(surah_num, reciter_id):
     try:
         text_res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/quran-uthmani").json()
+        if text_res["code"] != 200:
+            return []
+
+        text_ayahs = text_res["data"]["ayahs"]
+        if reciter_id == "minshawi_mujawwad":
+            return [
+                {
+                    "text": ayah["text"],
+                    "audio": get_minshawi_mujawwad_audio_url(surah_num, ayah["numberInSurah"]),
+                    "numberInSurah": ayah["numberInSurah"]
+                }
+                for ayah in text_ayahs
+            ]
+
         audio_res = requests.get(f"https://api.alquran.cloud/v1/surah/{surah_num}/{reciter_id}").json()
-        
-        if text_res['code'] == 200 and audio_res['code'] == 200:
-            combined = []
-            text_ayahs = text_res['data']['ayahs']
-            audio_ayahs = audio_res['data']['ayahs']
-            for i in range(len(text_ayahs)):
-                combined.append({
-                    "text": text_ayahs[i]["text"],
-                    "audio": audio_ayahs[i]["audio"],
-                    "numberInSurah": text_ayahs[i]["numberInSurah"]
-                })
-            return combined
-        return []
+        if audio_res["code"] != 200:
+            return []
+
+        audio_ayahs = audio_res["data"]["ayahs"]
+        return [
+            {
+                "text": text_ayahs[i]["text"],
+                "audio": audio_ayahs[i]["audio"],
+                "numberInSurah": text_ayahs[i]["numberInSurah"]
+            }
+            for i in range(len(text_ayahs))
+        ]
     except:
         return []
 
@@ -198,21 +217,28 @@ def get_ayah_data(surah_num, ayah_num, reciter_id):
         url_audio = f"https://api.alquran.cloud/v1/ayah/{surah_num}:{ayah_num}/{reciter_id}"
         
         text_res = requests.get(url_text).json()
-        audio_res = requests.get(url_audio).json()
+        if text_res["code"] != 200:
+            return None
+
+        if reciter_id == "minshawi_mujawwad":
+            audio_url = get_minshawi_mujawwad_audio_url(surah_num, ayah_num)
+        else:
+            audio_res = requests.get(url_audio).json()
+            if audio_res["code"] != 200:
+                return None
+            audio_url = audio_res["data"]["audio"]
+
+        text_data = text_res["data"]["text"]
+        if surah_num != 1 and ayah_num == 1:
+            basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
+            if text_data.startswith(basmalah):
+                 text_data = text_data[len(basmalah):].strip()
         
-        if text_res["code"] == 200 and audio_res["code"] == 200:
-            text_data = text_res["data"]["text"]
-            if surah_num != 1 and ayah_num == 1:
-                basmalah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ"
-                if text_data.startswith(basmalah):
-                     text_data = text_data[len(basmalah):].strip()
-            
-            return {
-                "text": text_data,
-                "audio": audio_res["data"]["audio"],
-                "sajda": text_res["data"].get("sajda", False)
-            }
-        return None
+        return {
+            "text": text_data,
+            "audio": audio_url,
+            "sajda": text_res["data"].get("sajda", False)
+        }
     except Exception:
         return None
 
