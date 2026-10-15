@@ -14,7 +14,7 @@ from bidi.algorithm import get_display
 
 # إعدادات الصفحة
 st.set_page_config(
-    page_title="المصحف المعلم",
+    page_title="استمع وتعلم",
     page_icon="🕌",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -97,6 +97,32 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# منع لوحة مفاتيح الهاتف من تحريك الصفحة عند فتح قوائم الاختيار.
+components.html(
+    """
+    <script>
+        const appWindow = window.parent;
+        const appDocument = appWindow.document;
+        const disableMobileKeyboard = () => {
+            if (!appWindow.matchMedia("(max-width: 768px)").matches) return;
+            appDocument
+                .querySelectorAll('[data-testid="stSelectbox"] input')
+                .forEach((input) => input.setAttribute("inputmode", "none"));
+        };
+        const observerKey = "__quranAppSelectboxKeyboardObserver";
+        if (!appWindow[observerKey]) {
+            appWindow[observerKey] = new appWindow.MutationObserver(disableMobileKeyboard);
+            appWindow[observerKey].observe(appDocument.body, {
+                childList: true,
+                subtree: true
+            });
+        }
+        disableMobileKeyboard();
+    </script>
+    """,
+    height=0,
+)
 
 # ثوابت البيانات
 REVELATION_ORDER_LIST = [
@@ -286,7 +312,7 @@ def create_pdf(surah_name, surah_text):
 
 # التطبيق الرئيسي
 def main():
-    st.markdown("<h1 style='text-align: center;'>🕌 المصحف المعلم</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🕌 استمع وتعلم</h1>", unsafe_allow_html=True)
 
     with st.sidebar:
         st.header("📖 علامات الوقف ومصطلحات الضبط")
