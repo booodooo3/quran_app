@@ -465,11 +465,17 @@ def main():
             selection = parse_voice_command(voice_result.get("transcript", ""), surahs)
             if selection:
                 st.session_state.current_surah_num, st.session_state.current_ayah_num = selection
+                st.session_state.surah_select, st.session_state.ayah_select = selection
                 st.success("تم تحديد السورة والآية من الأمر الصوتي.")
             else:
                 st.error("لم أتعرف على السورة أو رقم الآية. قل مثلًا: سورة البقرة، الآية خمسة.")
 
     current_surah_num = st.session_state.get('current_surah_num', 1)
+    if "surah_select" not in st.session_state:
+        st.session_state.surah_select = current_surah_num
+    if "ayah_select" not in st.session_state:
+        st.session_state.ayah_select = st.session_state.get('current_ayah_num', 1)
+
     current_surah = next((s for s in surahs if s["number"] == current_surah_num), surahs[0])
     
     revelation_order = SURAH_REVELATION_ORDER.get(current_surah["number"], "غير متوفر")
@@ -496,12 +502,14 @@ def main():
             "اختر السورة:",
             options=list(surah_options.keys()),
             format_func=lambda x: surah_options[x],
-            index=current_surah_num - 1
+            index=current_surah_num - 1,
+            key="surah_select"
         )
         
         if selected_surah_num != st.session_state.get('current_surah_num', 1):
             st.session_state.current_surah_num = selected_surah_num
             st.session_state.current_ayah_num = 1
+            st.session_state.ayah_select = 1
             st.rerun()
 
     with col3:
@@ -513,18 +521,21 @@ def main():
             if st.button("السابق (-)", key="prev_ayah", use_container_width=True):
                 if st.session_state.get('current_ayah_num', 1) > 1:
                     st.session_state.current_ayah_num -= 1
+                    st.session_state.ayah_select = st.session_state.current_ayah_num
                     st.rerun()
         with nav_col2:
             if st.button("التالي (+)", key="next_ayah", use_container_width=True):
                 if st.session_state.get('current_ayah_num', 1) < ayah_count:
                     st.session_state.current_ayah_num += 1
+                    st.session_state.ayah_select = st.session_state.current_ayah_num
                     st.rerun()
 
         selected_ayah_num = st.selectbox(
             "رقم الآية:",
             options=range(1, ayah_count + 1),
             index=st.session_state.get('current_ayah_num', 1) - 1,
-            format_func=lambda x: f"الآية {x}"
+            format_func=lambda x: f"الآية {x}",
+            key="ayah_select"
         )
         
         if selected_ayah_num != st.session_state.get('current_ayah_num', 1):
