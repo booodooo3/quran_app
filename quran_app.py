@@ -4,7 +4,6 @@ import requests
 import os
 import io
 import json
-import re
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -12,11 +11,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 import arabic_reshaper
 from bidi.algorithm import get_display
-
-voice_command = components.declare_component(
-    "mobile_voice_command",
-    path=os.path.join(os.path.dirname(__file__), "voice_command"),
-)
 
 # إعدادات الصفحة
 st.set_page_config(
@@ -101,7 +95,6 @@ st.markdown("""
         text-align: center;
         width: 40px;
     }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -266,86 +259,6 @@ def to_arabic_numerals(n):
     digits = {'0': '٠', '1': '١', '2': '٢', '3': '٣', '4': '٤', '5': '٥', '6': '٦', '7': '٧', '8': '٨', '9': '٩'}
     return "".join([digits[d] for d in str(n)])
 
-
-def normalize_voice_text(text):
-    text = re.sub(r"[\u064B-\u065F\u0670\u0640]", "", text)
-    text = text.translate(str.maketrans({
-        "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ى": "ي", "ة": "ه"
-    }))
-    return " ".join(text.lower().split())
-
-
-def get_voice_ayah_number(transcript):
-    normalized = normalize_voice_text(transcript).translate(
-        str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
-    )
-    ayah_marker = re.search(r"(?:^|\s)(?:الايه|ايه)(?:\s+|$)(.*)", normalized)
-    number_text = ayah_marker.group(1) if ayah_marker else normalized
-
-    digit_match = re.search(r"\d+", number_text)
-    if digit_match:
-        return int(digit_match.group())
-
-    number_words = {
-        "صفر": 0,
-        "واحد": 1, "واحده": 1, "احد": 1, "احدى": 1, "الاول": 1, "الاولي": 1,
-        "اثنان": 2, "اثنين": 2, "اثنتان": 2, "اثنتين": 2, "الثاني": 2, "الثانيه": 2,
-        "ثلاثه": 3, "ثلاث": 3, "الثالث": 3, "الثالثه": 3,
-        "اربعه": 4, "اربع": 4, "الرابع": 4, "الرابعه": 4,
-        "خمسه": 5, "خمس": 5, "الخامس": 5, "الخامسه": 5,
-        "سته": 6, "ست": 6, "السادس": 6, "السادسه": 6,
-        "سبعه": 7, "سبع": 7, "السابع": 7, "السابعه": 7,
-        "ثمانيه": 8, "ثمان": 8, "الثامن": 8, "الثامنه": 8,
-        "تسعه": 9, "تسع": 9, "التاسع": 9, "التاسعه": 9,
-        "عشره": 10, "عشر": 10, "العاشر": 10, "العاشره": 10,
-        "عشرون": 20, "عشرين": 20, "ثلاثون": 30, "ثلاثين": 30,
-        "اربعون": 40, "اربعين": 40, "خمسون": 50, "خمسين": 50,
-        "ستون": 60, "ستين": 60, "سبعون": 70, "سبعين": 70,
-        "ثمانون": 80, "ثمانين": 80, "تسعون": 90, "تسعين": 90,
-        "مئه": 100, "مائه": 100, "مئتين": 200, "مائتين": 200,
-    }
-    values = []
-    for word in number_text.split():
-        if word in ("رقم", "الاية", "ايه", "سوره", "والايه"):
-            continue
-        candidate = word[1:] if word.startswith("و") and word[1:] in number_words else word
-        if candidate in number_words:
-            values.append(number_words[candidate])
-
-    if not values:
-        return None
-    if 10 in values and len(values) == 2 and 0 < values[0] < 10:
-        return values[0] + 10
-    return sum(values)
-
-
-def parse_voice_command(transcript, surahs):
-    normalized_transcript = normalize_voice_text(transcript)
-    matching_surah = None
-
-    for surah in sorted(surahs, key=lambda item: len(item["name"]), reverse=True):
-        arabic_name = re.sub(
-            r"^(?:سوره\s*)+", "", normalize_voice_text(surah["name"])
-        ).strip()
-        english_name = surah.get("englishName", "").lower().strip()
-        candidates = [name for name in (arabic_name, english_name) if name]
-        if any(
-            re.search(rf"(?<!\w){re.escape(name)}(?!\w)", normalized_transcript)
-            for name in candidates
-        ):
-            matching_surah = surah
-            break
-
-    if matching_surah is None:
-        return None
-
-    ayah_number = get_voice_ayah_number(transcript)
-    if ayah_number is None or not 1 <= ayah_number <= matching_surah["numberOfAyahs"]:
-        return None
-
-    return matching_surah["number"], ayah_number
-
-
 @st.cache_data
 def get_full_surah_text(surah_num):
     try:
@@ -456,18 +369,6 @@ def main():
     if not surahs:
         st.error("فشل تحميل قائمة السور. يرجى التحقق من الاتصال بالإنترنت.")
         return
-
-    voice_result = voice_command(key="mobile_voice_command", default=None)
-    if isinstance(voice_result, dict):
-        request_id = voice_result.get("request_id")
-        if request_id and request_id != st.session_state.get("last_voice_request_id"):
-            st.session_state.last_voice_request_id = request_id
-            selection = parse_voice_command(voice_result.get("transcript", ""), surahs)
-            if selection:
-                st.session_state.current_surah_num, st.session_state.current_ayah_num = selection
-                st.success("تم تحديد السورة والآية من الأمر الصوتي.")
-            else:
-                st.error("لم أتعرف على السورة أو رقم الآية. قل مثلًا: سورة البقرة، الآية خمسة.")
 
     current_surah_num = st.session_state.get('current_surah_num', 1)
     current_surah = next((s for s in surahs if s["number"] == current_surah_num), surahs[0])
