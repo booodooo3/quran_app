@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #174b43;
+      font-family: Arial, sans-serif;
+    }
+    .voice-control {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      min-height: 66px;
+      padding: 4px 0;
+    }
+    button {
+      align-items: center;
+      background: #00695c;
+      border: 0;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: inline-flex;
+      flex: 0 0 54px;
+      height: 54px;
+      justify-content: center;
+      padding: 13px;
+      width: 54px;
+    }
+    button:disabled { opacity: 0.65; }
+    button svg { height: 28px; width: 28px; }
+    #prompt { font-size: 14px; line-height: 1.6; }
+    #status { color: #555; display: block; font-size: 12px; }
+    @media (min-width: 769px) {
+      body { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="voice-control">
+    <button id="record" type="button" aria-label="ابحث صوتيًا عن سورة وآية" title="ابحث صوتيًا">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2Z"/>
+      </svg>
+    </button>
+    <div id="prompt">
+      اضغط على الميكروفون وقل اسم السورة ورقم الآية
+      <span id="status" role="status"></span>
+    </div>
+  </div>
+  <script>
+    const sendMessage = (type, data) => window.parent.postMessage({type, ...data}, "*");
+    const setFrameHeight = (height) => sendMessage("streamlit:setFrameHeight", {height});
+    const setComponentValue = (value) =>
+      sendMessage("streamlit:setComponentValue", {value, dataType: "json"});
+    const button = document.getElementById("record");
+    const status = document.getElementById("status");
+    const mobile = window.matchMedia("(max-width: 768px)");
+
+    function updateVisibility() {
+      setFrameHeight(mobile.matches ? 74 : 0);
+    }
+
+    mobile.addEventListener("change", updateVisibility);
+    updateVisibility();
+    sendMessage("streamlit:componentReady", {apiVersion: 1});
+
+    button.addEventListener("click", () => {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        status.textContent = "التعرف الصوتي غير مدعوم في هذا المتصفح.";
+        return;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.lang = "ar-SA";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      button.disabled = true;
+      status.textContent = "استمع الآن: اسم السورة ورقم الآية";
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setComponentValue({transcript, request_id: Date.now().toString()});
+        status.textContent = `تم التعرف على: ${transcript}`;
+      };
+      recognition.onerror = (event) => {
+        status.textContent = event.error === "not-allowed"
+          ? "يرجى السماح باستخدام الميكروفون."
+          : "تعذر التعرف على الصوت. حاول مرة أخرى.";
+      };
+      recognition.onend = () => {
+        button.disabled = false;
+      };
+
+      try {
+        recognition.start();
+      } catch (error) {
+        button.disabled = false;
+        status.textContent = "تعذر بدء الميكروفون. حاول مرة أخرى.";
+      }
+    });
+  </script>
+</body>
+</html>
